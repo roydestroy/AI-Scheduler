@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from scheduler.diagnose import diagnose
 from scheduler.solver import solve
-from . import assistant, export, operations, store
+from . import assistant, erp, export, operations, store
 
 app = FastAPI(title="Language School Scheduler", version="0.3")
 
@@ -84,6 +84,55 @@ def post_solve(req: SolveRequest = SolveRequest()):
 @app.get("/api/schedule")
 def get_schedule():
     return store.load_last_schedule() or {"status": None, "schedule": [], "warnings": []}
+
+
+# ── ERP import ────────────────────────────────────────────────────────────────
+
+class ErpPreviewRequest(BaseModel):
+    source: str
+
+
+class ErpApplyRequest(BaseModel):
+    source: str
+    mapping: dict
+
+
+@app.get("/api/erp/sources")
+def erp_sources():
+    try:
+        return {"sources": erp.public_sources()}
+    except erp.ErpError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@app.post("/api/erp/preview")
+def erp_preview(req: ErpPreviewRequest):
+    try:
+        source = erp.get_source(req.source)
+        rows = erp.fetch_rows(source)
+        out = erp.build_plan(store.load_school(), source, rows,
+                             erp.load_mapping())
+    except erp.ErpError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return out["plan"]
+
+
+@app.post("/api/erp/apply")
+def erp_apply(req: ErpApplyRequest):
+    try:
+        source = erp.get_source(req.source)
+        rows = erp.fetch_rows(source)
+        out = erp.build_plan(store.load_school(), source, rows, req.mapping)
+    except erp.ErpError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    errors = store.validate_school(out["school"])
+    if errors:
+        raise HTTPException(status_code=422, detail={"errors": errors})
+
+    erp.save_mapping(out["plan"]["mapping"])
+    store.save_school(out["school"])
+    return {"ok": True, "plan": out["plan"], "school": out["school"]}
 
 
 # ── exports ───────────────────────────────────────────────────────────────────

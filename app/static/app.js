@@ -424,6 +424,109 @@ $("#reset-btn").addEventListener("click", async () => {
   $("#solve-status").classList.add("hidden");
 });
 
+/* ── ERP import ────────────────────────────────────────────────── */
+
+async function renderErpSources() {
+  try {
+    const body = await api("/api/erp/sources");
+    if (!body.sources.length) return;           // not configured → keep hidden
+    $("#erp-section").classList.remove("hidden");
+    const host = $("#erp-sources");
+    host.innerHTML = "";
+    for (const s of body.sources) {
+      const btn = document.createElement("button");
+      btn.className = "add-btn";
+      btn.textContent = `⇩ Preview import from ${s.name} (location ${s.location})`;
+      btn.addEventListener("click", () => erpPreview(s.key, btn));
+      host.appendChild(btn);
+    }
+  } catch { /* config error → section stays hidden; errors surface on preview */ }
+}
+
+async function erpPreview(key, btn) {
+  const host = $("#erp-preview");
+  btn.disabled = true;
+  host.innerHTML = `<p class="hint"><span class="spinner">⇩</span> Reading ERP database…</p>`;
+  try {
+    const plan = await api("/api/erp/preview", { method: "POST", body: JSON.stringify({ source: key }) });
+    renderErpPlan(plan);
+  } catch (e) {
+    host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderErpPlan(plan) {
+  const host = $("#erp-preview");
+  const li = (arr, max = 12) => arr.slice(0, max).map((x) => `<li>${esc(x)}</li>`).join("")
+    + (arr.length > max ? `<li>… and ${arr.length - max} more</li>` : "");
+
+  let html = `<h3>Import preview — ${plan.total_rows} active enrolments</h3>
+    <p class="hint">Adjust how each level code is scheduled, then apply. Settings are remembered.</p>
+    <table class="editor" id="erp-mapping">
+      <tr><th>Code</th><th>Students</th><th>Import</th><th>Periods/session</th><th>Sessions/week</th><th>Young learner</th></tr>`;
+  for (const c of plan.codes) {
+    html += `<tr data-code="${esc(c.code)}">
+      <td><b>${esc(c.code)}</b></td><td>${c.students}</td>
+      <td><input type="checkbox" data-m="import" ${c.import ? "checked" : ""}></td>
+      <td><input type="number" min="1" max="6" class="narrow" data-m="periods_per_session" value="${c.periods_per_session}"></td>
+      <td><select data-m="sessions_per_week">${[1, 2, 3].map((n) =>
+        `<option ${n === c.sessions_per_week ? "selected" : ""}>${n}</option>`).join("")}</select></td>
+      <td><input type="checkbox" data-m="young_learner" ${c.young_learner ? "checked" : ""}></td></tr>`;
+  }
+  html += `</table>`;
+
+  const sections = [
+    ["New classes", plan.new_classes], ["New students", plan.new_students],
+    ["Level changes", plan.updated_students], ["Removed students", plan.removed_students],
+    ["Removed classes", plan.removed_classes],
+  ];
+  for (const [title, arr] of sections) {
+    if (arr.length) html += `<p><b>${title} (${arr.length}):</b></p><ul>${li(arr)}</ul>`;
+  }
+  const skipped = Object.entries(plan.skipped || {});
+  if (skipped.length) {
+    html += `<p class="hint">Skipped codes (not imported): ${
+      skipped.map(([c, n]) => `${esc(c)} (${n})`).join(", ")}</p>`;
+  }
+  for (const w of plan.warnings || []) html += `<div class="warn-line">⚠ ${esc(w)}</div>`;
+
+  html += `<div class="data-toolbar" style="justify-content:flex-start">
+    <button class="primary" id="erp-apply">✓ Apply import</button>
+    <button class="add-btn" id="erp-cancel">Cancel</button></div>`;
+  host.innerHTML = html;
+
+  $("#erp-cancel").addEventListener("click", () => { host.innerHTML = ""; });
+  $("#erp-apply").addEventListener("click", async () => {
+    const mapping = {};
+    host.querySelectorAll("#erp-mapping tr[data-code]").forEach((tr) => {
+      mapping[tr.dataset.code] = {
+        import: tr.querySelector('[data-m="import"]').checked,
+        periods_per_session: parseInt(tr.querySelector('[data-m="periods_per_session"]').value, 10) || 2,
+        sessions_per_week: parseInt(tr.querySelector('[data-m="sessions_per_week"]').value, 10) || 2,
+        young_learner: tr.querySelector('[data-m="young_learner"]').checked,
+      };
+    });
+    $("#erp-apply").disabled = true;
+    try {
+      const body = await api("/api/erp/apply", {
+        method: "POST",
+        body: JSON.stringify({ source: plan.source, mapping }),
+      });
+      school = body.school;
+      setDirty(false);
+      renderData();
+      host.innerHTML = `<div class="status-bar status-OPTIMAL"><span class="big">Imported ✓</span>
+        <span>${body.plan.new_students.length} new, ${body.plan.updated_students.length} changed,
+        ${body.plan.removed_students.length} removed students — press Solve to reschedule.</span></div>`;
+    } catch (e) {
+      host.insertAdjacentHTML("beforeend", `<div class="error-box">${esc(e.message)}</div>`);
+      $("#erp-apply").disabled = false;
+    }
+  });
+}
+
 /* ── assistant ─────────────────────────────────────────────────── */
 
 async function checkAI() {
@@ -544,4 +647,5 @@ $("#chat-form").addEventListener("submit", async (ev) => {
   const last = await api("/api/schedule");
   if (last && last.schedule && last.schedule.length) renderSchedule(last);
   checkAI();
+  renderErpSources();
 })();

@@ -42,6 +42,15 @@
     </div>
     <div id="data-errors" class="error-box hidden"></div>
 
+    <details id="erp-section" class="hidden" open>
+      <summary>Import from ERP</summary>
+      <div id="erp-sources" class="erp-sources"></div>
+      <div id="erp-preview"></div>
+      <p class="hint">Reads active enrolments of the current academic period from each branch's
+        ERP database. Only ERP-imported records are updated/removed — manual entries are never touched.
+        Configure connections in <code>data/erp_sources.json</code> (see <code>erp_sources.example.json</code>).</p>
+    </details>
+
     <details open>
       <summary>Opening hours</summary>
       <div id="hours-editor"></div>

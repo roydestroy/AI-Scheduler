@@ -92,6 +92,34 @@ Any OpenAI-compatible endpoint works — configure with environment variables:
 
 ---
 
+## Importing students from your ERP (SQL Server)
+
+If your student records live in a SQL Server (Express) database, the app can
+pull them in directly — students, level codes and sibling groups — instead of
+manual entry. Each branch's database is one import *source* bound to one
+location, so a multi-branch school imports each branch separately into the
+same shared dataset.
+
+Setup:
+
+1. Copy `erp_sources.example.json` to `data/erp_sources.json` and edit the
+   connection strings (Windows auth locally; SQL auth + TCP/IP for a remote
+   branch over VPN/Tailscale).
+2. In the web UI → **School Data** → **Import from ERP** → press *Preview*.
+3. Review the level-code mapping table (import yes/no, hours per week,
+   young-learner flag — remembered per code) and the change list
+   (new / moved / removed students), then *Apply import*.
+
+Notes:
+
+- Reads are **strictly read-only** (a single SELECT over
+  `Students` + `Enrollments` + `AcademicPeriods` where `IsCurrent = 1`).
+- Your ERP's level codes become the app's levels — qualify teachers per code.
+- Re-running an import updates that branch only; manually added students and
+  any blocked-time windows you set on imported students are preserved.
+
+---
+
 ## How the scheduling works
 
 ### Time model

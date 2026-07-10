@@ -198,16 +198,32 @@ def solve(school: dict, time_limit_seconds: int = 120,
                             "sess_idx": sess_idx,
                         }
 
-    # ── H1: each (class, session) has exactly one active assignment ───────────
+    # ── classes with a session that has no candidate at all can never be
+    # scheduled; exclude them (with a warning) instead of making the whole
+    # school infeasible — common right after an ERP import, before teachers
+    # have been qualified for the new levels.
+    excluded: set[str] = set()
     for cls in school["classes"]:
         c = cls["id"]
         for sess_idx in range(cls["sessions_per_week"]):
+            if not any(k[0] == c and k[1] == sess_idx for k in candidates):
+                excluded.add(c)
+                warnings.append(f"{cls['name']} could not be scheduled at all — "
+                                "no valid teacher/room/time combination exists. "
+                                "Check teacher qualifications, availability and opening hours.")
+                break
+    for k, v in candidates.items():
+        if k[0] in excluded:
+            model.add(v["active"] == 0)
+
+    # ── H1: each (class, session) has exactly one active assignment ───────────
+    for cls in school["classes"]:
+        c = cls["id"]
+        if c in excluded:
+            continue
+        for sess_idx in range(cls["sessions_per_week"]):
             sess_vars = [v["active"] for k, v in candidates.items()
                          if k[0] == c and k[1] == sess_idx]
-            if not sess_vars:
-                warnings.append(f"No feasible slot at all for {cls['name']} session {sess_idx + 1} "
-                                f"— check teachers, rooms and hours.")
-                continue
             model.add(sum(sess_vars) == 1)
 
     # ── H2: sessions of a class must follow a valid day pattern ──────────────
@@ -222,6 +238,8 @@ def solve(school: dict, time_limit_seconds: int = 120,
                     model.add(sum(on_day) <= 1)
     for cls in (school["classes"] if "patterns" not in relax else []):
         c        = cls["id"]
+        if c in excluded:
+            continue
         patterns = _day_patterns(school, cls)
 
         pattern_bools = []
@@ -293,7 +311,11 @@ def solve(school: dict, time_limit_seconds: int = 120,
 
     # ── H8: student blocks — already filtered in candidate generation ─────────
     # H9: sibling groups ───────────────────────────────────────────────────────
-    for (c1, c2) in (_sibling_pairs(school) if "siblings" not in relax else []):
+    sibling_pairs = [] if "siblings" in relax else [
+        (a, b) for (a, b) in _sibling_pairs(school)
+        if a not in excluded and b not in excluded
+    ]
+    for (c1, c2) in sibling_pairs:
         day_overlap_bools = []
         for day in range(len(DAYS)):
             c1_on_day = [v["active"] for k, v in candidates.items()

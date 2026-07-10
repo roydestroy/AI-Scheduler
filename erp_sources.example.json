@@ -1,0 +1,20 @@
+{
+  "//": "Copy this file to data/erp_sources.json and edit. Each source is one branch's ERP database, bound to one location id from your school data.",
+  "//conn": "On the machine that hosts the DB use Windows auth (Trusted_Connection=yes). For the OTHER branch over Tailscale, enable TCP/IP + mixed-mode auth in SQL Server Configuration Manager, create a read-only SQL login, and use UID/PWD with the Tailscale IP.",
+  "sources": [
+    {
+      "key": "fil",
+      "name": "Filothei",
+      "location": "A",
+      "type": "sqlserver",
+      "conn_str": "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost\\SQLEXPRESS;DATABASE=FilotheiSchoolERP;Trusted_Connection=yes;"
+    },
+    {
+      "key": "nio",
+      "name": "Nea Ionia",
+      "location": "B",
+      "type": "sqlserver",
+      "conn_str": "DRIVER={ODBC Driver 17 for SQL Server};SERVER=100.x.y.z\\SQLEXPRESS;DATABASE=NeaIoniaSchoolERP;UID=scheduler_ro;PWD=CHANGE-ME;TrustServerCertificate=yes;"
+    }
+  ]
+}
