@@ -1,7 +1,7 @@
 # Full free-of-charge stack: the scheduler app + a local Ollama server.
 #
 #   docker compose up -d
-#   docker compose exec ollama ollama pull qwen2.5:7b   # once, ~4.7 GB
+#   docker compose exec ollama ollama pull qwen2.5:3b   # once, ~1.9 GB
 #   open http://localhost:8000
 #
 # No GPU required (CPU inference works, just slower). If you have an
@@ -15,7 +15,7 @@ services:
       - "8000:8000"
     environment:
       LLM_BASE_URL: http://ollama:11434/v1
-      LLM_MODEL: qwen2.5:7b
+      LLM_MODEL: qwen2.5:3b
     volumes:
       - school-data:/data
     depends_on:

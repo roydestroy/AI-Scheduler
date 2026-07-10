@@ -60,14 +60,16 @@ python -m scheduler.report
 
 ```bash
 docker compose up -d
-docker compose exec ollama ollama pull qwen2.5:7b   # once (~4.7 GB)
+docker compose exec ollama ollama pull qwen2.5:3b   # once (~1.9 GB)
 # open http://localhost:8000
 ```
 
 ### Enabling the AI assistant (free, runs on your own machine)
 
 1. Install [Ollama](https://ollama.com) (macOS / Windows / Linux).
-2. Pull the default model: `ollama pull qwen2.5:7b` (~4.7 GB, needs ~8 GB RAM).
+2. Pull the default model: `ollama pull qwen2.5:3b` (~1.9 GB — runs on any
+   ordinary laptop). On a machine with ≥16 GB RAM, `qwen2.5:7b` gives
+   noticeably better answers (set `LLM_MODEL=qwen2.5:7b`).
 3. That's it — the app finds it at `http://localhost:11434` automatically.
 
 The **Assistant** tab then accepts requests like:
@@ -85,7 +87,7 @@ Any OpenAI-compatible endpoint works — configure with environment variables:
 | Variable | Default | Notes |
 |---|---|---|
 | `LLM_BASE_URL` | `http://localhost:11434/v1` | Ollama, LM Studio, llama.cpp, Groq, OpenRouter… |
-| `LLM_MODEL` | `qwen2.5:7b` | `qwen2.5:3b` is faster on weak machines |
+| `LLM_MODEL` | `qwen2.5:3b` | `qwen2.5:7b` for better quality on ≥16 GB machines |
 | `LLM_API_KEY` | `ollama` | only needed for hosted providers |
 
 ---

@@ -6,7 +6,8 @@ a local Ollama server, so the whole feature runs free of charge on the
 user's own machine:
 
     LLM_BASE_URL  (default http://localhost:11434/v1)
-    LLM_MODEL     (default qwen2.5:7b — good at structured JSON output)
+    LLM_MODEL     (default qwen2.5:3b — fast on ordinary laptops;
+                   qwen2.5:7b gives better answers if you have ≥16 GB RAM)
     LLM_API_KEY   (default "ollama"; set a real key for hosted providers)
 
 The same three variables also work with Groq, OpenRouter, LM Studio,
@@ -28,7 +29,7 @@ import httpx
 from scheduler.data import DAYS, tick_label
 
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/")
-LLM_MODEL    = os.environ.get("LLM_MODEL", "qwen2.5:7b")
+LLM_MODEL    = os.environ.get("LLM_MODEL", "qwen2.5:3b")
 LLM_API_KEY  = os.environ.get("LLM_API_KEY", "ollama")
 LLM_TIMEOUT  = float(os.environ.get("LLM_TIMEOUT", "180"))
 
