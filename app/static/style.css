@@ -80,6 +80,9 @@ code { background: var(--line); padding: 1px 5px; border-radius: 4px; font-size:
 .status-FEASIBLE .big { color: var(--warn); }
 .status-INFEASIBLE .big, .status-UNKNOWN .big { color: var(--bad); }
 .status-bar .warn-line { color: var(--warn); font-size: 13px; width: 100%; }
+.export-links { margin-left: auto; display: flex; gap: 12px; }
+.export-links a { color: var(--accent); text-decoration: none; font-size: 14px; }
+.export-links a:hover { text-decoration: underline; }
 
 .day-card {
   background: var(--card); border: 1px solid var(--line); border-radius: 12px;

@@ -172,6 +172,8 @@ def validate_school(school: dict) -> list[str]:
         pref = c.get("preferred_location")
         if pref and pref not in locations:
             err(f"Class {cid}: unknown preferred_location '{pref}'.")
+        if "saturday_preferred" in c and not isinstance(c["saturday_preferred"], bool):
+            err(f"Class {cid}: saturday_preferred must be true/false.")
 
     # students
     check_unique_ids("student", school["students"])

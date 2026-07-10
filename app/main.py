@@ -12,11 +12,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from scheduler.diagnose import diagnose
 from scheduler.solver import solve
-from . import assistant, operations, store
+from . import assistant, export, operations, store
 
 app = FastAPI(title="Language School Scheduler", version="0.3")
 
@@ -61,20 +63,56 @@ def reset_school():
 
 # ── solving ───────────────────────────────────────────────────────────────────
 
+def _solve_and_store(school: dict, time_limit_seconds: int) -> dict:
+    result = solve(school, time_limit_seconds=time_limit_seconds)
+    if not result["schedule"]:
+        # explain WHY it is unsolvable (static checks + relaxation probes)
+        result["warnings"].extend(diagnose(school, time_limit_per_probe=10))
+    store.save_last_schedule(result)
+    return result
+
+
 @app.post("/api/solve")
 def post_solve(req: SolveRequest = SolveRequest()):
     school = store.load_school()
     errors = store.validate_school(school)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
-    result = solve(school, time_limit_seconds=req.time_limit_seconds)
-    store.save_last_schedule(result)
-    return result
+    return _solve_and_store(school, req.time_limit_seconds)
 
 
 @app.get("/api/schedule")
 def get_schedule():
     return store.load_last_schedule() or {"status": None, "schedule": [], "warnings": []}
+
+
+# ── exports ───────────────────────────────────────────────────────────────────
+
+def _last_schedule_or_404() -> dict:
+    result = store.load_last_schedule()
+    if not result or not result.get("schedule"):
+        raise HTTPException(status_code=404, detail="No solved schedule yet — run the solver first.")
+    return result
+
+
+@app.get("/api/export/ics")
+def export_ics():
+    result = _last_schedule_or_404()
+    return Response(
+        content=export.build_ics(result, store.load_school()),
+        media_type="text/calendar",
+        headers={"Content-Disposition": 'attachment; filename="school-timetable.ics"'},
+    )
+
+
+@app.get("/api/export/pdf")
+def export_pdf():
+    result = _last_schedule_or_404()
+    return Response(
+        content=export.build_pdf(result, store.load_school()),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="school-timetable.pdf"'},
+    )
 
 
 # ── AI assistant ──────────────────────────────────────────────────────────────
@@ -118,9 +156,7 @@ def assistant_apply(req: ApplyRequest):
     response = {"ok": True, "preview": preview, "school": new_school, "result": None}
 
     if req.resolve:
-        result = solve(new_school, time_limit_seconds=req.time_limit_seconds)
-        store.save_last_schedule(result)
-        response["result"] = result
+        response["result"] = _solve_and_store(new_school, req.time_limit_seconds)
     return response
 
 

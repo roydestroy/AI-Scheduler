@@ -78,8 +78,12 @@ function renderStatus(result) {
   const pen = result.objective !== null && result.objective !== undefined
     ? `<span>Penalty: <b>${result.objective}</b> (0 = all preferences met)</span>` : "";
   const warns = (result.warnings || []).map((w) => `<div class="warn-line">⚠ ${esc(w)}</div>`).join("");
+  const exports = (result.schedule || []).length
+    ? `<span class="export-links"><a href="/api/export/pdf">⬇ PDF</a>
+       <a href="/api/export/ics" title="Import into Google Calendar / Outlook / Apple Calendar">⬇ Calendar (.ics)</a></span>`
+    : "";
   bar.innerHTML = `<span class="big">${esc(result.status || "—")}</span>
-    <span>${(result.schedule || []).length} sessions</span> ${pen} ${warns}`;
+    <span>${(result.schedule || []).length} sessions</span> ${pen} ${exports} ${warns}`;
 }
 
 function renderSchedule(result) {
@@ -298,7 +302,7 @@ function renderRooms() {
 
 function renderClasses() {
   let html = `<table class="editor"><tr>
-    <th>Id</th><th>Name</th><th>Level</th><th>Periods/session</th><th>Sessions/week</th><th>Preferred loc.</th><th></th></tr>`;
+    <th>Id</th><th>Name</th><th>Level</th><th>Periods/session</th><th>Sessions/week</th><th>Preferred loc.</th><th title="Prefer a Saturday slot">Sat pref.</th><th></th></tr>`;
   school.classes.forEach((c, i) => {
     html += `<tr><td>${esc(c.id)}</td>
       <td><input type="text" data-f="name" data-i="${i}" value="${esc(c.name)}"></td>
@@ -307,6 +311,7 @@ function renderClasses() {
       <td><select data-f="sessions_per_week" data-i="${i}">
         ${[1, 2, 3].map((n) => `<option ${n === c.sessions_per_week ? "selected" : ""}>${n}</option>`).join("")}</select></td>
       <td><select data-f="preferred_location" data-i="${i}">${locOptions(c.preferred_location, true)}</select></td>
+      <td><input type="checkbox" data-f="saturday_preferred" data-i="${i}" ${c.saturday_preferred ? "checked" : ""}></td>
       <td><button class="row-del" data-i="${i}">✕</button></td></tr>`;
   });
   const host = $("#classes-editor");
@@ -316,6 +321,7 @@ function renderClasses() {
     const f = el.dataset.f;
     if (f === "periods_per_session" || f === "sessions_per_week") c[f] = parseInt(el.value, 10) || 1;
     else if (f === "preferred_location") c[f] = el.value || null;
+    else if (f === "saturday_preferred") c[f] = el.checked;
     else c[f] = el.value.trim();
     setDirty(true);
   }));

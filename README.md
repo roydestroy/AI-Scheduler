@@ -22,13 +22,16 @@ The AI layer is optional: the whole app also works through normal forms.
 
 ## Status
 
-**v0.3 — solver core + REST API + web UI + local AI assistant.**
+**v0.4 — feature-complete against the original roadmap.**
 
 - [x] **Phase 1** — CP-SAT solver core with realistic constraints
 - [x] **Phase 2** — FastAPI wrapper (REST endpoints, JSON persistence)
 - [x] **Phase 3** — Web UI (visual weekly grid, data entry, AI chat)
-- [ ] **Phase 4** — Conflict explanations, PDF / Google Calendar export,
+- [x] **Phase 4** — Conflict explanations, PDF & calendar (.ics) export,
       Saturday-preference flag, Docker image
+
+Possible future work: user accounts, drag-and-drop manual overrides,
+direct Google Calendar API sync (the .ics export covers the import path).
 
 ---
 
@@ -51,6 +54,14 @@ There is also a plain CLI report:
 
 ```bash
 python -m scheduler.report
+```
+
+### Or run everything with Docker (app + AI in one command)
+
+```bash
+docker compose up -d
+docker compose exec ollama ollama pull qwen2.5:7b   # once (~4.7 GB)
+# open http://localhost:8000
 ```
 
 ### Enabling the AI assistant (free, runs on your own machine)
@@ -110,9 +121,20 @@ teacher** simultaneously, optimising the whole week at once.
 |---|------|---------|
 | S1 | Keep each class at its preferred location | 3 / violation |
 | S2 | Avoid Friday sessions (reserved for overflow / private lessons) | 2 / session |
+| S3 | Classes flagged `saturday_preferred` should use a Saturday slot | 5 / weekday session |
 
 The solver minimises total penalty. A score of **0** means every preference
 was satisfied as well as every hard rule.
+
+### When no schedule exists
+
+The app doesn't just say "infeasible" — it diagnoses the conflict:
+static checks (missing qualifications, capacity arithmetic) plus
+*relaxation probes*: it re-solves with one rule switched off at a time
+and reports which rule is the culprit, e.g. *“a schedule EXISTS if you
+relax the young-learner end-time cutoff (H6)”*. The findings appear in
+the UI and are passed to the AI assistant so you can discuss fixes in
+plain language.
 
 ---
 
@@ -122,14 +144,17 @@ was satisfied as well as every hard rule.
 AI-Scheduler/
 ├── scheduler/               # the deterministic engine
 │   ├── data.py              #   data model + sample school (default_school())
-│   ├── solver.py            #   CP-SAT model — solve(school_dict)
+│   ├── solver.py            #   CP-SAT model — solve(school_dict, relax=…)
+│   ├── diagnose.py          #   infeasibility explanations (relaxation probes)
 │   └── report.py            #   CLI report (python -m scheduler.report)
 ├── app/                     # the interactive app
 │   ├── main.py              #   FastAPI: REST API + serves the UI
 │   ├── store.py             #   JSON persistence + validation (data/school.json)
 │   ├── operations.py        #   structured edit operations (validate/preview/apply)
 │   ├── assistant.py         #   LLM client (Ollama / any OpenAI-compatible API)
+│   ├── export.py            #   PDF + iCalendar (.ics) generation
 │   └── static/              #   single-page UI (no build step)
+├── Dockerfile / docker-compose.yml   # app + Ollama, one command
 └── requirements.txt
 ```
 
@@ -147,6 +172,8 @@ hallucinated answer can never corrupt the schedule.
 | `POST /api/school/reset` | restore the sample dataset |
 | `POST /api/solve` | run the solver, returns the schedule |
 | `GET /api/schedule` | last solved schedule |
+| `GET /api/export/pdf` | printable weekly timetable + per-teacher pages |
+| `GET /api/export/ics` | recurring calendar events (import into Google/Outlook/Apple) |
 | `GET /api/assistant/status` | is the LLM reachable / model installed? |
 | `POST /api/assistant/chat` | message → `{reply, operations, preview, errors}` |
 | `POST /api/assistant/apply` | apply confirmed operations (optionally re-solve) |

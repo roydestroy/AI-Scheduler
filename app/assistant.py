@@ -50,8 +50,8 @@ update_teacher  {"op":"update_teacher","teacher":id_or_name, then any of:
 remove_teacher  {"op":"remove_teacher","teacher":id_or_name}
 add_room        {"op":"add_room","name":str,"location":location}
 remove_room     {"op":"remove_room","room":id_or_name}
-add_class       {"op":"add_class","name":str,"level":level,"periods_per_session":int,"sessions_per_week":int,"preferred_location":location}
-update_class    {"op":"update_class","class":id_or_name, then any of: "level","periods_per_session","sessions_per_week","preferred_location","name"}
+add_class       {"op":"add_class","name":str,"level":level,"periods_per_session":int,"sessions_per_week":int,"preferred_location":location,"saturday_preferred":bool}
+update_class    {"op":"update_class","class":id_or_name, then any of: "level","periods_per_session","sessions_per_week","preferred_location","name","saturday_preferred"}
 remove_class    {"op":"remove_class","class":id_or_name}
 add_student     {"op":"add_student","name":str,"class":id_or_name,"sibling_group":str_or_null,"blocked_windows":[window,...],"note":str}
 update_student  {"op":"update_student","student":id_or_name, then any of: "class","sibling_group","blocked_windows","add_blocked_windows","note","name"}
@@ -170,8 +170,16 @@ def _system_prompt(school: dict, schedule_summary: str | None) -> str:
 
 
 def summarise_schedule(result: dict | None) -> str | None:
-    if not result or not result.get("schedule"):
+    if not result:
         return None
+    if not result.get("schedule"):
+        if not result.get("status"):
+            return None
+        # infeasible / failed solve: pass the diagnosis to the model so it
+        # can discuss the conflict with the user
+        lines = [f"The last solve FAILED with status {result['status']}."]
+        lines += [f"  Finding: {w}" for w in result.get("warnings", [])]
+        return "\n".join(lines)
     lines = [f"Status {result['status']}, penalty {result.get('objective')}"]
     for e in result["schedule"]:
         lines.append(f"  {e['day']} {e['start_label']}-{e['end_label']} {e['class_name']} "

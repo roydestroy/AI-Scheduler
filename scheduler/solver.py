@@ -80,22 +80,40 @@ def _sibling_pairs(school: dict) -> list[tuple[str, str]]:
             pairs.append((a, b))
     return pairs
 
-def _day_patterns(school: dict, sessions_per_week: int) -> list[tuple]:
+def _open_days(school: dict) -> list[int]:
+    return sorted({DAYS.index(d) for d, locs in school["day_hours"].items()
+                   if any(locs.values())})
+
+def _day_patterns(school: dict, cls: dict) -> list[tuple]:
+    sessions_per_week = cls["sessions_per_week"]
     if sessions_per_week == 1:
         # any single teaching day
-        days_open = sorted({DAYS.index(d) for d, locs in school["day_hours"].items()
-                            if any(locs.values())})
-        return [(d,) for d in days_open]
+        return [(d,) for d in _open_days(school)]
     if sessions_per_week == 2:
-        return [tuple(p) for p in school["settings"]["day_pairs_2x"]]
+        patterns = [tuple(p) for p in school["settings"]["day_pairs_2x"]]
+        if cls.get("saturday_preferred"):
+            # weekend-friendly classes may also pair a weekday with Saturday
+            patterns += [(d, 5) for d in (0, 1, 2, 3)]
+        return patterns
     if sessions_per_week == 3:
-        return [tuple(p) for p in school["settings"]["day_triplets_3x"]]
+        patterns = [tuple(p) for p in school["settings"]["day_triplets_3x"]]
+        if cls.get("saturday_preferred"):
+            patterns += [(0, 2, 5), (1, 3, 5)]
+        return patterns
     raise ValueError(f"Unsupported sessions_per_week={sessions_per_week}")
 
 
 # ── main solver ───────────────────────────────────────────────────────────────
 
-def solve(school: dict, time_limit_seconds: int = 120) -> dict:
+#: constraint groups that can be switched off for infeasibility diagnosis
+RELAXABLE = ("patterns", "young_cutoff", "travel", "student_blocks", "siblings")
+
+
+def solve(school: dict, time_limit_seconds: int = 120,
+          relax: frozenset[str] | set[str] = frozenset()) -> dict:
+    """Build and solve the timetable. `relax` names constraint groups
+    (see RELAXABLE) to skip — used by scheduler.diagnose to explain
+    infeasible configurations."""
     model  = cp_model.CpModel()
     solver = cp_model.CpSolver()
 
@@ -118,16 +136,19 @@ def solve(school: dict, time_limit_seconds: int = 120) -> dict:
         c         = cls["id"]
         n_sess    = cls["sessions_per_week"]
         dur       = cls["periods_per_session"] * ticks_per_period
-        blocked   = _class_blocked_windows(school, c)
+        blocked   = [] if "student_blocks" in relax else _class_blocked_windows(school, c)
         q_teachers= _qualified_teachers(school, cls)
-        patterns  = _day_patterns(school, n_sess)
+        patterns  = _day_patterns(school, cls)
 
         if not q_teachers:
             warnings.append(f"No qualified teacher for {cls['name']} (level {cls['level']}).")
 
         for sess_idx in range(n_sess):
             # Which days could this session index land on?
-            days_for_sess = set(pat[sess_idx] for pat in patterns)
+            if "patterns" in relax:
+                days_for_sess = set(_open_days(school))
+            else:
+                days_for_sess = set(pat[sess_idx] for pat in patterns)
 
             for day in days_for_sess:
                 for room in school["rooms"]:
@@ -190,10 +211,18 @@ def solve(school: dict, time_limit_seconds: int = 120) -> dict:
             model.add(sum(sess_vars) == 1)
 
     # ── H2: sessions of a class must follow a valid day pattern ──────────────
-    for cls in school["classes"]:
+    if "patterns" in relax:
+        # relaxed: only require the sessions of a class on distinct days
+        for cls in school["classes"]:
+            c = cls["id"]
+            for day in range(len(DAYS)):
+                on_day = [v["active"] for k, v in candidates.items()
+                          if k[0] == c and v["day"] == day]
+                if len(on_day) > 1:
+                    model.add(sum(on_day) <= 1)
+    for cls in (school["classes"] if "patterns" not in relax else []):
         c        = cls["id"]
-        n_sess   = cls["sessions_per_week"]
-        patterns = _day_patterns(school, n_sess)
+        patterns = _day_patterns(school, cls)
 
         pattern_bools = []
         for pat_idx, pattern in enumerate(patterns):
@@ -232,7 +261,7 @@ def solve(school: dict, time_limit_seconds: int = 120) -> dict:
 
     # ── H5: session fits in window — already enforced by _valid_start_ticks ───
     # H6: young-learner end time ───────────────────────────────────────────────
-    for k, v in candidates.items():
+    for k, v in (candidates.items() if "young_cutoff" not in relax else []):
         cls = class_map[k[0]]
         if cls["level"] in young_levels:
             model.add(v["start"] + v["duration"] <= young_cutoff).only_enforce_if(v["active"])
@@ -240,8 +269,9 @@ def solve(school: dict, time_limit_seconds: int = 120) -> dict:
     # ── H7: teacher travel time between locations on same day ─────────────────
     travel_ticks = settings["travel_periods"] * ticks_per_period
     by_td: dict[tuple, list] = defaultdict(list)
-    for k, v in candidates.items():
-        by_td[(v["teacher"], v["day"])].append(v)
+    if "travel" not in relax:
+        for k, v in candidates.items():
+            by_td[(v["teacher"], v["day"])].append(v)
 
     for (t_id, day), sess_list in by_td.items():
         if len(sess_list) < 2:
@@ -263,7 +293,7 @@ def solve(school: dict, time_limit_seconds: int = 120) -> dict:
 
     # ── H8: student blocks — already filtered in candidate generation ─────────
     # H9: sibling groups ───────────────────────────────────────────────────────
-    for (c1, c2) in _sibling_pairs(school):
+    for (c1, c2) in (_sibling_pairs(school) if "siblings" not in relax else []):
         day_overlap_bools = []
         for day in range(len(DAYS)):
             c1_on_day = [v["active"] for k, v in candidates.items()
@@ -299,6 +329,12 @@ def solve(school: dict, time_limit_seconds: int = 120) -> dict:
         # S2 — Friday session
         if v["day"] == 4:
             penalties.append(2 * v["active"])
+
+        # S3 — Saturday-preferring classes: penalise weekday sessions instead.
+        # Weight 5 so one Saturday session wins even when the only Saturday
+        # branch is not the class's preferred location (S1 costs 3).
+        if cls.get("saturday_preferred") and v["day"] != 5:
+            penalties.append(5 * v["active"])
 
     if penalties:
         model.minimize(sum(penalties))

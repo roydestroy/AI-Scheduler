@@ -25,6 +25,10 @@ def run():
         print(f"  ⚠️  {w}")
 
     if not result["schedule"]:
+        from .diagnose import diagnose
+        print("\n  Diagnosing why no schedule exists …")
+        for n in diagnose(school):
+            print(f"  • {n}")
         return
 
     sched = result["schedule"]

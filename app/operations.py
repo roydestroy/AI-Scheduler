@@ -233,11 +233,13 @@ def _op_add_class(school, op):
         "sessions_per_week": int(op.get("sessions_per_week", 2)),
         "preferred_location": (_find_location(school, op["preferred_location"])
                                if op.get("preferred_location") else None),
+        "saturday_preferred": bool(op.get("saturday_preferred", False)),
     }
     school["classes"].append(c)
     return (f"Add class {c['name']} ({c['id']}): level {c['level']}, "
             f"{c['periods_per_session']} periods × {c['sessions_per_week']}/week"
-            + (f", prefers {c['preferred_location']}" if c["preferred_location"] else ""))
+            + (f", prefers {c['preferred_location']}" if c["preferred_location"] else "")
+            + (", prefers Saturday" if c["saturday_preferred"] else ""))
 
 
 def _op_update_class(school, op):
@@ -257,6 +259,9 @@ def _op_update_class(school, op):
         c["preferred_location"] = (_find_location(school, op["preferred_location"])
                                    if op["preferred_location"] else None)
         changes.append(f"preferred location → {c['preferred_location'] or 'none'}")
+    if "saturday_preferred" in op:
+        c["saturday_preferred"] = bool(op["saturday_preferred"])
+        changes.append(f"Saturday preference → {'on' if c['saturday_preferred'] else 'off'}")
     if not changes:
         raise OpError(f"update_class for {c['name']}: no recognised fields.")
     return f"Update class {c['name']} ({c['id']}): " + "; ".join(changes)
