@@ -106,14 +106,16 @@ Setup:
    connection strings (Windows auth locally; SQL auth + TCP/IP for a remote
    branch over VPN/Tailscale).
 2. In the web UI → **School Data** → **Import from ERP** → press *Preview*.
-3. Review the level-code mapping table (import yes/no, hours per week,
+3. Pick the **academic period** to import from the dropdown — the ERP's
+   "current" period is only the preselected default, never an implicit choice.
+4. Review the level-code mapping table (import yes/no, hours per week,
    young-learner flag — remembered per code) and the change list
    (new / moved / removed students), then *Apply import*.
 
 Notes:
 
-- Reads are **strictly read-only** (a single SELECT over
-  `Students` + `Enrollments` + `AcademicPeriods` where `IsCurrent = 1`).
+- Reads are **strictly read-only** (SELECTs over
+  `Students` + `Enrollments` + `AcademicPeriods` for the period you choose).
 - Your ERP's level codes become the app's levels — qualify teachers per code.
 - Re-running an import updates that branch only; manually added students and
   any blocked-time windows you set on imported students are preserved.

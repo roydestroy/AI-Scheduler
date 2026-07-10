@@ -34,16 +34,24 @@ from .store import _DATA_DIR  # same data directory as school.json
 SOURCES_FILE = _DATA_DIR / "erp_sources.json"
 MAPPING_FILE = _DATA_DIR / "erp_mapping.json"
 
-#: the query run against each ERP database (read-only)
+#: the queries run against each ERP database (read-only).
+#: The academic period is an explicit choice in the UI — the ERP's
+#: IsCurrent flag is only used as the preselected default, never silently.
 ENROLLMENT_QUERY = """
 SELECT s.StudentId, s.FirstName, s.LastName, s.SiblingGroupId, e.LevelOrClass
 FROM Enrollments e
 JOIN Students s        ON s.StudentId = e.StudentId
 JOIN AcademicPeriods p ON p.AcademicPeriodId = e.AcademicPeriodId
-WHERE p.IsCurrent = 1
+WHERE {period_filter}
   AND e.Status = 'Active'
   AND e.IsStopped = 0
   AND s.Discontinued = 0
+"""
+
+PERIODS_QUERY = """
+SELECT AcademicPeriodId, Name, IsCurrent
+FROM AcademicPeriods
+ORDER BY Name DESC
 """
 
 
@@ -122,8 +130,22 @@ def ensure_mapping(mapping: dict, codes: list[str]) -> dict:
 
 # ── fetching rows ─────────────────────────────────────────────────────────────
 
-def fetch_rows(source: dict) -> list[dict]:
-    """→ [{student_id, first_name, last_name, sibling_group_id, level_code}]"""
+def fetch_periods(source: dict) -> list[dict]:
+    """→ [{id, name, is_current}] — the academic periods available in the ERP.
+    File sources have no notion of periods and return []."""
+    if source.get("type", "sqlserver") == "jsonfile":
+        return []
+    rows = _query_sqlserver(source, PERIODS_QUERY)
+    return [{
+        "id": str(r["AcademicPeriodId"]),
+        "name": r["Name"],
+        "is_current": bool(r["IsCurrent"]),
+    } for r in rows]
+
+
+def fetch_rows(source: dict, academic_period_id: str | None = None) -> list[dict]:
+    """→ [{student_id, first_name, last_name, sibling_group_id, level_code}]
+    academic_period_id=None falls back to the ERP's IsCurrent period."""
     stype = source.get("type", "sqlserver")
     if stype == "jsonfile":
         path = Path(source["path"])
@@ -131,7 +153,7 @@ def fetch_rows(source: dict) -> list[dict]:
             raise ErpError(f"ERP file source not found: {path}")
         rows = json.loads(path.read_text(encoding="utf-8"))
     elif stype == "sqlserver":
-        rows = _fetch_sqlserver(source)
+        rows = _fetch_sqlserver(source, academic_period_id)
     else:
         raise ErpError(f"Unknown ERP source type '{stype}'.")
 
@@ -150,7 +172,7 @@ def fetch_rows(source: dict) -> list[dict]:
     return cleaned
 
 
-def _fetch_sqlserver(source: dict) -> list[dict]:
+def _query_sqlserver(source: dict, query: str, params: tuple = ()) -> list[dict]:
     try:
         import pyodbc
     except ImportError:
@@ -163,15 +185,24 @@ def _fetch_sqlserver(source: dict) -> list[dict]:
     try:
         with pyodbc.connect(conn_str, timeout=10) as conn:
             cur = conn.cursor()
-            cur.execute(ENROLLMENT_QUERY)
+            cur.execute(query, *params) if params else cur.execute(query)
             cols = [c[0] for c in cur.description]
-            raw = [dict(zip(cols, row)) for row in cur.fetchall()]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
     except pyodbc.Error as e:
         raise ErpError(
             f"Cannot read ERP database for '{source['name']}': {e}. "
             "Check the connection string, that SQL Server allows TCP/IP "
             "connections, and that the machine is reachable (Tailscale up?)."
         )
+
+
+def _fetch_sqlserver(source: dict, academic_period_id: str | None = None) -> list[dict]:
+    if academic_period_id:
+        query = ENROLLMENT_QUERY.format(period_filter="e.AcademicPeriodId = ?")
+        raw = _query_sqlserver(source, query, (academic_period_id,))
+    else:
+        query = ENROLLMENT_QUERY.format(period_filter="p.IsCurrent = 1")
+        raw = _query_sqlserver(source, query)
 
     return [{
         "student_id":       r["StudentId"],

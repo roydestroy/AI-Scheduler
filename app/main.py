@@ -88,13 +88,19 @@ def get_schedule():
 
 # ── ERP import ────────────────────────────────────────────────────────────────
 
+class ErpPeriodsRequest(BaseModel):
+    source: str
+
+
 class ErpPreviewRequest(BaseModel):
     source: str
+    academic_period_id: str | None = None
 
 
 class ErpApplyRequest(BaseModel):
     source: str
     mapping: dict
+    academic_period_id: str | None = None
 
 
 @app.get("/api/erp/sources")
@@ -105,11 +111,19 @@ def erp_sources():
         raise HTTPException(status_code=422, detail=str(e))
 
 
+@app.post("/api/erp/periods")
+def erp_periods(req: ErpPeriodsRequest):
+    try:
+        return {"periods": erp.fetch_periods(erp.get_source(req.source))}
+    except erp.ErpError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @app.post("/api/erp/preview")
 def erp_preview(req: ErpPreviewRequest):
     try:
         source = erp.get_source(req.source)
-        rows = erp.fetch_rows(source)
+        rows = erp.fetch_rows(source, req.academic_period_id)
         out = erp.build_plan(store.load_school(), source, rows,
                              erp.load_mapping())
     except erp.ErpError as e:
@@ -121,7 +135,7 @@ def erp_preview(req: ErpPreviewRequest):
 def erp_apply(req: ErpApplyRequest):
     try:
         source = erp.get_source(req.source)
-        rows = erp.fetch_rows(source)
+        rows = erp.fetch_rows(source, req.academic_period_id)
         out = erp.build_plan(store.load_school(), source, rows, req.mapping)
     except erp.ErpError as e:
         raise HTTPException(status_code=502, detail=str(e))

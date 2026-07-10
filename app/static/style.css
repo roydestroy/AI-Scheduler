@@ -155,6 +155,10 @@ table.editor input.narrow { width: 64px; }
 
 /* ── ERP import ─────────────────────────────────────────────────── */
 .erp-sources { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.erp-period-row select {
+  padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 13.5px; margin-left: 6px;
+}
 #erp-preview h3 { font-size: 15px; margin: 12px 0 6px; }
 #erp-preview ul { margin: 4px 0 10px; padding-left: 22px; font-size: 13.5px; }
 #erp-preview .warn-line { color: var(--warn); font-size: 13px; }

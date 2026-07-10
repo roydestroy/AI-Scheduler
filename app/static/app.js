@@ -437,19 +437,38 @@ async function renderErpSources() {
       const btn = document.createElement("button");
       btn.className = "add-btn";
       btn.textContent = `⇩ Preview import from ${s.name} (location ${s.location})`;
-      btn.addEventListener("click", () => erpPreview(s.key, btn));
+      btn.addEventListener("click", () => erpStart(s, btn));
       host.appendChild(btn);
     }
   } catch { /* config error → section stays hidden; errors surface on preview */ }
 }
 
-async function erpPreview(key, btn) {
+async function erpStart(source, btn) {
   const host = $("#erp-preview");
   btn.disabled = true;
   host.innerHTML = `<p class="hint"><span class="spinner">⇩</span> Reading ERP database…</p>`;
   try {
-    const plan = await api("/api/erp/preview", { method: "POST", body: JSON.stringify({ source: key }) });
-    renderErpPlan(plan);
+    // let the user pick the academic period explicitly — the ERP's
+    // "current" flag is only the preselected default
+    const body = await api("/api/erp/periods", {
+      method: "POST", body: JSON.stringify({ source: source.key }),
+    });
+    const periods = body.periods || [];
+    let periodId = null;
+    if (periods.length) {
+      const current = periods.find((p) => p.is_current) || periods[0];
+      periodId = current.id;
+      host.innerHTML = `<p class="erp-period-row"><label>Academic period:
+        <select id="erp-period">${periods.map((p) =>
+          `<option value="${esc(p.id)}" ${p.id === periodId ? "selected" : ""}>
+             ${esc(p.name)}${p.is_current ? " (current in ERP)" : ""}</option>`).join("")}
+        </select></label></p><div id="erp-plan"></div>`;
+      $("#erp-period").addEventListener("change", () =>
+        erpPreview(source.key, $("#erp-period").value));
+    } else {
+      host.innerHTML = `<div id="erp-plan"></div>`;   // file source: no periods
+    }
+    await erpPreview(source.key, periodId);
   } catch (e) {
     host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
   } finally {
@@ -457,8 +476,23 @@ async function erpPreview(key, btn) {
   }
 }
 
+async function erpPreview(key, periodId) {
+  const planHost = $("#erp-plan");
+  planHost.innerHTML = `<p class="hint"><span class="spinner">⇩</span> Loading enrolments…</p>`;
+  try {
+    const plan = await api("/api/erp/preview", {
+      method: "POST",
+      body: JSON.stringify({ source: key, academic_period_id: periodId }),
+    });
+    plan.academic_period_id = periodId;
+    renderErpPlan(plan);
+  } catch (e) {
+    planHost.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+  }
+}
+
 function renderErpPlan(plan) {
-  const host = $("#erp-preview");
+  const host = $("#erp-plan") || $("#erp-preview");
   const li = (arr, max = 12) => arr.slice(0, max).map((x) => `<li>${esc(x)}</li>`).join("")
     + (arr.length > max ? `<li>… and ${arr.length - max} more</li>` : "");
 
@@ -497,7 +531,7 @@ function renderErpPlan(plan) {
     <button class="add-btn" id="erp-cancel">Cancel</button></div>`;
   host.innerHTML = html;
 
-  $("#erp-cancel").addEventListener("click", () => { host.innerHTML = ""; });
+  $("#erp-cancel").addEventListener("click", () => { $("#erp-preview").innerHTML = ""; });
   $("#erp-apply").addEventListener("click", async () => {
     const mapping = {};
     host.querySelectorAll("#erp-mapping tr[data-code]").forEach((tr) => {
@@ -512,12 +546,13 @@ function renderErpPlan(plan) {
     try {
       const body = await api("/api/erp/apply", {
         method: "POST",
-        body: JSON.stringify({ source: plan.source, mapping }),
+        body: JSON.stringify({ source: plan.source, mapping,
+                               academic_period_id: plan.academic_period_id || null }),
       });
       school = body.school;
       setDirty(false);
       renderData();
-      host.innerHTML = `<div class="status-bar status-OPTIMAL"><span class="big">Imported ✓</span>
+      $("#erp-preview").innerHTML = `<div class="status-bar status-OPTIMAL"><span class="big">Imported ✓</span>
         <span>${body.plan.new_students.length} new, ${body.plan.updated_students.length} changed,
         ${body.plan.removed_students.length} removed students — press Solve to reschedule.</span></div>`;
     } catch (e) {
