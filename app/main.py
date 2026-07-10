@@ -47,14 +47,14 @@ async def _auth_middleware(request: Request, call_next):
     if hmac.compare_digest(request.cookies.get(_AUTH_COOKIE, ""), _auth_token()):
         return await call_next(request)
     if request.url.path.startswith("/api/"):
-        return JSONResponse({"detail": "Authentication required — reload the page to log in."},
+        return JSONResponse({"detail": "Απαιτείται σύνδεση — ανανεώστε τη σελίδα για να συνδεθείτε."},
                             status_code=401)
     return RedirectResponse("/login", status_code=303)
 
 
 _LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Scheduler — login</title>
+<title>Πρόγραμμα Σχολείου — Σύνδεση</title>
 <style>
  body {{ font: 16px system-ui; background: #f5f6f8; display: flex;
         align-items: center; justify-content: center; min-height: 100vh; margin: 0; }}
@@ -67,16 +67,16 @@ _LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
  .err {{ color: #dc2626; font-size: 14px; margin: 0; }}
 </style></head><body>
 <form method="post" action="/login">
-  <h1>🗓 Language School Scheduler</h1>
+  <h1>🗓 Πρόγραμμα Σχολείου</h1>
   {error}
-  <input type="password" name="password" placeholder="Password" autofocus>
-  <button type="submit">Log in</button>
+  <input type="password" name="password" placeholder="Κωδικός" autofocus>
+  <button type="submit">Σύνδεση</button>
 </form></body></html>"""
 
 
 @app.get("/login")
 def login_page(e: int = 0):
-    err = '<p class="err">Wrong password — try again.</p>' if e else ""
+    err = '<p class="err">Λάθος κωδικός — δοκιμάστε ξανά.</p>' if e else ""
     return HTMLResponse(_LOGIN_PAGE.format(error=err))
 
 
@@ -159,7 +159,7 @@ def get_history():
 def post_undo():
     snap = store.undo()
     if snap is None:
-        raise HTTPException(status_code=404, detail="Nothing to undo.")
+        raise HTTPException(status_code=404, detail="Δεν υπάρχει τίποτα για αναίρεση.")
     return {"ok": True, "label": snap["label"], "school": snap["school"],
             "result": snap.get("schedule"), "rev": store.school_rev()}
 
@@ -186,8 +186,9 @@ def put_school(req: SchoolUpdate):
     if req.base_rev and req.base_rev != store.school_rev():
         raise HTTPException(
             status_code=409,
-            detail="Someone else changed the school data while you were editing. "
-                   "Reload to get the latest version (your unsaved edits will be lost).")
+            detail="Κάποιος άλλος άλλαξε τα δεδομένα του σχολείου όσο κάνατε επεξεργασία. "
+                   "Ανανεώστε για να πάρετε την τελευταία έκδοση "
+                   "(οι μη αποθηκευμένες αλλαγές σας θα χαθούν).")
     errors = store.validate_school(req.school)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
@@ -306,7 +307,8 @@ def erp_apply(req: ErpApplyRequest):
 def _last_schedule_or_404() -> dict:
     result = store.load_last_schedule()
     if not result or not result.get("schedule"):
-        raise HTTPException(status_code=404, detail="No solved schedule yet — run the solver first.")
+        raise HTTPException(status_code=404,
+                            detail="Δεν υπάρχει ακόμη πρόγραμμα — εκτελέστε πρώτα την επίλυση.")
     return result
 
 

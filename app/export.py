@@ -63,32 +63,57 @@ def build_ics(result: dict, school: dict) -> str:
 
 # ── PDF ───────────────────────────────────────────────────────────────────────
 
-def _latin(s: str) -> str:
-    """fpdf core fonts are latin-1 only."""
-    return s.encode("latin-1", "replace").decode("latin-1")
+GREEK_DAYS_FULL = {"Mon": "Δευτέρα", "Tue": "Τρίτη", "Wed": "Τετάρτη",
+                   "Thu": "Πέμπτη", "Fri": "Παρασκευή", "Sat": "Σάββατο"}
+
+#: candidate Unicode fonts (needed for Greek text; fpdf core fonts are latin-1)
+_FONT_CANDIDATES = [
+    ("C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/segoeuib.ttf"),
+    ("C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf"),
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    ("/System/Library/Fonts/Supplemental/Arial.ttf",
+     "/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
+]
+
+
+def _setup_font(pdf: FPDF) -> tuple[str, bool]:
+    """Register a Unicode font if one exists. → (family, unicode_ok)."""
+    from pathlib import Path
+    for regular, bold in _FONT_CANDIDATES:
+        if Path(regular).exists():
+            pdf.add_font("app", "", regular)
+            pdf.add_font("app", "B", bold if Path(bold).exists() else regular)
+            return "app", True
+    return "Helvetica", False
 
 
 def build_pdf(result: dict, school: dict) -> bytes:
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
+    family, unicode_ok = _setup_font(pdf)
+
+    def _txt(s: str) -> str:
+        return str(s) if unicode_ok else str(s).encode("latin-1", "replace").decode("latin-1")
+    _latin = _txt  # existing call sites
 
     sched = result.get("schedule", [])
 
     # ── page 1+: weekly overview, one block per day ──────────────────────────
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "Weekly timetable", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 9)
+    pdf.set_font(family, "B", 16)
+    pdf.cell(0, 10, _txt("Εβδομαδιαίο πρόγραμμα"), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font(family, "", 9)
     pdf.set_text_color(110)
     pdf.cell(0, 6,
-             f"Status {result.get('status')} - penalty {result.get('objective')} - "
-             f"{len(sched)} sessions - generated {date.today().isoformat()}",
+             _txt(f"Κατάσταση {result.get('status')} - ποινή {result.get('objective')} - "
+                  f"{len(sched)} μαθήματα - δημιουργήθηκε {date.today().isoformat()}"),
              new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(0)
     pdf.ln(2)
 
     widths = (26, 78, 40, 52, 46)
-    headers = ("Time", "Class", "Room", "Location", "Teacher")
+    headers = tuple(_txt(h) for h in ("Ώρα", "Τμήμα", "Αίθουσα", "Κτήριο", "Καθηγητής"))
 
     by_day = defaultdict(list)
     for e in sched:
@@ -100,14 +125,14 @@ def build_pdf(result: dict, school: dict) -> bytes:
             continue
         if pdf.get_y() > 150:
             pdf.add_page()
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, DAYS[day_idx], new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_font(family, "B", 12)
+        pdf.cell(0, 8, _txt(GREEK_DAYS_FULL.get(DAYS[day_idx], DAYS[day_idx])), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font(family, "B", 9)
         pdf.set_fill_color(235)
         for w, h in zip(widths, headers):
             pdf.cell(w, 6, h, border=1, fill=True)
         pdf.ln()
-        pdf.set_font("Helvetica", "", 9)
+        pdf.set_font(family, "", 9)
         for e in entries:
             loc_name = school["locations"].get(e["location"], e["location"])
             cells = (f"{e['start_label']}-{e['end_label']}", e["class_name"],
@@ -124,22 +149,22 @@ def build_pdf(result: dict, school: dict) -> bytes:
 
     if by_teacher:
         pdf.add_page()
-        pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 10, "Teacher schedules", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font(family, "B", 16)
+        pdf.cell(0, 10, _txt("Προγράμματα καθηγητών"), new_x="LMARGIN", new_y="NEXT")
         for teacher in sorted(by_teacher):
             entries = sorted(by_teacher[teacher], key=lambda x: (x["day_idx"], x["start_tick"]))
             total_min = sum(e["duration_periods"] for e in entries) * 50
             if pdf.get_y() > 165:
                 pdf.add_page()
-            pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(0, 8, _latin(f"{teacher}  -  {len(entries)} sessions, "
-                                  f"{total_min // 60}h{total_min % 60:02d} teaching/week"),
+            pdf.set_font(family, "B", 12)
+            pdf.cell(0, 8, _latin(f"{teacher}  -  {len(entries)} μαθήματα, "
+                                  f"{total_min // 60}ώ{total_min % 60:02d} διδασκαλία/εβδομάδα"),
                      new_x="LMARGIN", new_y="NEXT")
-            pdf.set_font("Helvetica", "", 9)
+            pdf.set_font(family, "", 9)
             for e in entries:
                 loc_name = school["locations"].get(e["location"], e["location"])
                 pdf.cell(0, 6, _latin(
-                    f"{e['day']}  {e['start_label']}-{e['end_label']}   "
+                    f"{GREEK_DAYS_FULL.get(e['day'], e['day'])[:3]}  {e['start_label']}-{e['end_label']}   "
                     f"{e['class_name']}   @ {loc_name}, {e['room_name']}"),
                     new_x="LMARGIN", new_y="NEXT")
             pdf.ln(2)

@@ -141,7 +141,8 @@ def solve(school: dict, time_limit_seconds: int = 120,
         patterns  = _day_patterns(school, cls)
 
         if not q_teachers:
-            warnings.append(f"No qualified teacher for {cls['name']} (level {cls['level']}).")
+            warnings.append(f"Δεν υπάρχει καταρτισμένος καθηγητής για το {cls['name']} "
+                            f"(επίπεδο {cls['level']}).")
 
         for sess_idx in range(n_sess):
             # Which days could this session index land on?
@@ -208,9 +209,10 @@ def solve(school: dict, time_limit_seconds: int = 120,
         for sess_idx in range(cls["sessions_per_week"]):
             if not any(k[0] == c and k[1] == sess_idx for k in candidates):
                 excluded.add(c)
-                warnings.append(f"{cls['name']} could not be scheduled at all — "
-                                "no valid teacher/room/time combination exists. "
-                                "Check teacher qualifications, availability and opening hours.")
+                warnings.append(f"Το {cls['name']} δεν μπόρεσε να προγραμματιστεί καθόλου — "
+                                "δεν υπάρχει έγκυρος συνδυασμός καθηγητή/αίθουσας/ώρας. "
+                                "Ελέγξτε τα προσόντα και τη διαθεσιμότητα των καθηγητών "
+                                "και τα ωράρια λειτουργίας.")
                 break
     for k, v in candidates.items():
         if k[0] in excluded:
@@ -421,7 +423,8 @@ def solve(school: dict, time_limit_seconds: int = 120,
     }
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        result["warnings"].append("No feasible schedule found — check constraints / availability.")
+        result["warnings"].append("Δεν βρέθηκε εφικτό πρόγραμμα — "
+                                  "ελέγξτε τους περιορισμούς και τη διαθεσιμότητα.")
         return result
 
     from .data import tick_label

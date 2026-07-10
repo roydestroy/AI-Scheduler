@@ -73,6 +73,14 @@ FEW_SHOT = [
         "operations": [{"op": "update_teacher", "teacher": "Maria",
                         "remove_available_days": ["Tue"]}],
     })},
+    {"role": "user", "content": "Η Άννα δεν μπορεί πια Παρασκευές, και έχει φροντιστήριο κάθε Δευτέρα 4 με 6"},
+    {"role": "assistant", "content": json.dumps({
+        "reply": "Θα αφαιρέσω την Παρασκευή από τις διαθέσιμες ημέρες της Άννας και θα προσθέσω "
+                 "μη διαθεσιμότητα Δευτέρα 16:00-18:00. Ελέγξτε και εφαρμόστε.",
+        "operations": [{"op": "update_teacher", "teacher": "Anna",
+                        "remove_available_days": ["Fri"],
+                        "add_blocked_windows": [{"day": "Mon", "from": "16:00", "to": "18:00"}]}],
+    }, ensure_ascii=False)},
     {"role": "user", "content": "New student Eleni joins B2 Gr.1, she has dance class on Wednesdays 5 to 7pm"},
     {"role": "assistant", "content": json.dumps({
         "reply": "Adding Eleni to B2 Gr.1 with a Wednesday 17:00-19:00 blocked window.",
@@ -154,6 +162,9 @@ def _system_prompt(school: dict, schedule_summary: str | None) -> str:
         '{"reply": "<short message to the manager>", "operations": [<zero or more operations>]}',
         "",
         "Rules:",
+        "- The manager may write in Greek or English. ALWAYS write \"reply\" in the "
+        "same language as the manager's message (Greek request → Greek reply).",
+        "- Day names may be Greek (Δευτέρα…Σάββατο) — map them to Mon…Sat in operations.",
         "- If the request is a question or chit-chat, return \"operations\": [].",
         "- Only use operations from the list below; never invent op names or fields.",
         "- Refer to teachers/classes/students by their id when possible.",
@@ -237,23 +248,22 @@ def chat(school: dict, message: str, history: list[dict] | None = None,
         )
     except httpx.ConnectError:
         raise AssistantError(
-            f"Cannot reach the language model at {LLM_BASE_URL}. "
-            "Is Ollama running? Install from https://ollama.com, then: "
-            f"`ollama pull {LLM_MODEL}` and `ollama serve`."
+            f"Δεν βρέθηκε γλωσσικό μοντέλο στο {LLM_BASE_URL}. Τρέχει το Ollama; "
+            f"Εγκατάσταση από https://ollama.com και μετά: `ollama pull {LLM_MODEL}`."
         )
     except httpx.TimeoutException:
         raise AssistantError(
-            f"The model at {LLM_BASE_URL} timed out after {LLM_TIMEOUT:.0f}s. "
-            "A smaller model (e.g. qwen2.5:3b) may respond faster on this machine."
+            f"Το μοντέλο στο {LLM_BASE_URL} δεν απάντησε εντός {LLM_TIMEOUT:.0f}s. "
+            "Ένα μικρότερο μοντέλο (π.χ. qwen2.5:3b) ίσως απαντά ταχύτερα σε αυτό το μηχάνημα."
         )
 
     if resp.status_code == 404:
         raise AssistantError(
-            f"Model '{LLM_MODEL}' not found on the server. "
-            f"Run `ollama pull {LLM_MODEL}` (or set LLM_MODEL to an installed model)."
+            f"Το μοντέλο '{LLM_MODEL}' δεν βρέθηκε στον διακομιστή. "
+            f"Εκτελέστε `ollama pull {LLM_MODEL}` (ή ορίστε LLM_MODEL σε εγκατεστημένο μοντέλο)."
         )
     if resp.status_code != 200:
-        raise AssistantError(f"LLM server error {resp.status_code}: {resp.text[:500]}")
+        raise AssistantError(f"Σφάλμα διακομιστή LLM {resp.status_code}: {resp.text[:500]}")
 
     try:
         content = resp.json()["choices"][0]["message"]["content"]
@@ -285,8 +295,8 @@ def status() -> dict:
                 m == LLM_MODEL or m.split(":")[0] == LLM_MODEL.split(":")[0] for m in models
             )
             if info["model_available"] is False:
-                info["hint"] = f"Run: ollama pull {LLM_MODEL}"
+                info["hint"] = f"Εκτελέστε: ollama pull {LLM_MODEL}"
     except httpx.HTTPError:
-        info["hint"] = ("No LLM server found. Install Ollama (https://ollama.com), "
-                        f"then run: ollama pull {LLM_MODEL}")
+        info["hint"] = ("Δεν βρέθηκε διακομιστής LLM. Εγκαταστήστε το Ollama "
+                        f"(https://ollama.com) και εκτελέστε: ollama pull {LLM_MODEL}")
     return info

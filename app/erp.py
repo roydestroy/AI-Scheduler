@@ -191,9 +191,9 @@ def _query_sqlserver(source: dict, query: str, params: tuple = ()) -> list[dict]
             return [dict(zip(cols, row)) for row in cur.fetchall()]
     except pyodbc.Error as e:
         raise ErpError(
-            f"Cannot read ERP database for '{source['name']}': {e}. "
-            "Check the connection string, that SQL Server allows TCP/IP "
-            "connections, and that the machine is reachable (Tailscale up?)."
+            f"Αδύνατη η ανάγνωση της βάσης ERP για '{source['name']}': {e}. "
+            "Ελέγξτε το connection string, ότι ο SQL Server δέχεται συνδέσεις TCP/IP "
+            "και ότι το μηχάνημα είναι προσβάσιμο (Tailscale ενεργό;)."
         )
 
 
@@ -278,7 +278,7 @@ def build_plan(school: dict, source: dict, rows: list[dict], mapping: dict) -> d
                 "preferred_location": loc,
                 "erp_source": key,
             })
-            plan["new_classes"].append(f"{code} ({source['name']}) — {counts[code]} students")
+            plan["new_classes"].append(f"{code} ({source['name']}) — {counts[code]} μαθητές")
 
     # drop previously-imported classes of this source whose code vanished
     keep_ids = set(class_by_code.values())
@@ -319,8 +319,9 @@ def build_plan(school: dict, source: dict, rows: list[dict], mapping: dict) -> d
         sid = base_id if n == 1 else f"{base_id}-{n}"
         if n == 2:
             plan["warnings"].append(
-                f"{r['first_name']} {r['last_name']} has multiple scheduled enrolments — "
-                "note the solver does not yet prevent them overlapping in time.")
+                f"Ο/Η {r['first_name']} {r['last_name']} έχει πολλαπλές εγγραφές προς "
+                "προγραμματισμό — προσοχή: ο επιλύτης δεν αποτρέπει ακόμη τη χρονική "
+                "επικάλυψή τους.")
 
         name = f"{r['first_name']} {r['last_name']}".strip()
         sib = f"{key}-{_short(r['sibling_group_id'])}" if r["sibling_group_id"] else None
@@ -388,8 +389,8 @@ def build_plan(school: dict, source: dict, rows: list[dict], mapping: dict) -> d
                 if slots:
                     if donor != c["id"]:
                         plan["baseline_carried"].append(
-                            f"{c['name']} keeps the old time slot of "
-                            f"{old_classes[donor]['name']} (same students, one level up)")
+                            f"Το {c['name']} κρατά την παλιά ώρα του "
+                            f"{old_classes[donor]['name']} (ίδιοι μαθητές, ένα επίπεδο πάνω)")
                     c["previous_slots"] = copy.deepcopy(slots)
                 else:
                     c.pop("previous_slots", None)

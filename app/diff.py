@@ -19,8 +19,12 @@ def _key(e: dict) -> str:
     return f"{e['class_id']}|{e['day_idx']}|{e['start_tick']}"
 
 
+GREEK_DAYS = {"Mon": "Δευ", "Tue": "Τρί", "Wed": "Τετ",
+              "Thu": "Πέμ", "Fri": "Παρ", "Sat": "Σάβ"}
+
+
 def _slot(e: dict) -> str:
-    return f"{e['day']} {e['start_label']}"
+    return f"{GREEK_DAYS.get(e['day'], e['day'])} {e['start_label']}"
 
 
 def compute_changes(old_result: dict | None, new_result: dict) -> dict | None:
@@ -59,9 +63,9 @@ def compute_changes(old_result: dict | None, new_result: dict) -> dict | None:
                 if (o["day_idx"], o["start_tick"]) == (n["day_idx"], n["start_tick"]):
                     parts = []
                     if o["teacher_id"] != n["teacher_id"]:
-                        parts.append(f"teacher {o['teacher']} → {n['teacher']}")
+                        parts.append(f"καθηγητής {o['teacher']} → {n['teacher']}")
                     if o["room_id"] != n["room_id"]:
-                        parts.append(f"room {o['room_name']} → {n['room_name']}")
+                        parts.append(f"αίθουσα {o['room_name']} → {n['room_name']}")
                     items.append({
                         "type": "teacher" if o["teacher_id"] != n["teacher_id"] else "room",
                         "class_name": name,
@@ -75,9 +79,9 @@ def compute_changes(old_result: dict | None, new_result: dict) -> dict | None:
         for o, n in zip(list(old), list(new)):
             extra = []
             if o["teacher_id"] != n["teacher_id"]:
-                extra.append(f"teacher {o['teacher']} → {n['teacher']}")
+                extra.append(f"καθηγητής {o['teacher']} → {n['teacher']}")
             if o["room_id"] != n["room_id"]:
-                extra.append(f"room {o['room_name']} → {n['room_name']}")
+                extra.append(f"αίθουσα {o['room_name']} → {n['room_name']}")
             items.append({
                 "type": "moved",
                 "class_name": name,
@@ -92,15 +96,15 @@ def compute_changes(old_result: dict | None, new_result: dict) -> dict | None:
             items.append({
                 "type": "added",
                 "class_name": name,
-                "text": f"{name}: new session {_slot(n)} with {n['teacher']} in {n['room_name']}",
+                "text": f"{name}: νέο μάθημα {_slot(n)} με {n['teacher']} στην {n['room_name']}",
                 "keys": [_key(n)],
             })
         for o in old:
             items.append({
                 "type": "removed",
                 "class_name": name,
-                "text": f"{name}: session {_slot(o)} (was {o['teacher']}, {o['room_name']}) "
-                        "is no longer scheduled",
+                "text": f"{name}: το μάθημα {_slot(o)} (ήταν {o['teacher']}, {o['room_name']}) "
+                        "δεν προγραμματίζεται πλέον",
                 "keys": [],
             })
 

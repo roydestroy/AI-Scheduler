@@ -1,30 +1,30 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="el">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Language School Scheduler</title>
+<title>Πρόγραμμα Σχολείου</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <header>
   <div class="brand">
-    <h1>🗓 Language School Scheduler</h1>
+    <h1>🗓 Πρόγραμμα Σχολείου</h1>
     <span class="ws-controls">
-      <select id="ws-select" title="Workspace (academic year)"></select>
-      <button id="ws-new" title="New workspace — e.g. next academic year, optionally mirroring this year's schedule">＋</button>
+      <select id="ws-select" title="Χώρος εργασίας (σχολική χρονιά)"></select>
+      <button id="ws-new" title="Νέος χώρος εργασίας — π.χ. επόμενη χρονιά, με αντιγραφή του φετινού προγράμματος ως βάση">＋</button>
     </span>
-    <span id="ai-pill" class="pill pill-unknown" title="AI assistant status">AI: checking…</span>
+    <span id="ai-pill" class="pill pill-unknown" title="Κατάσταση βοηθού AI">AI: έλεγχος…</span>
   </div>
   <nav>
-    <button class="tab-btn active" data-tab="schedule">Schedule</button>
-    <button class="tab-btn" data-tab="data">School Data</button>
-    <button class="tab-btn" data-tab="assistant">Assistant</button>
+    <button class="tab-btn active" data-tab="schedule">Πρόγραμμα</button>
+    <button class="tab-btn" data-tab="data">Δεδομένα σχολείου</button>
+    <button class="tab-btn" data-tab="assistant">Βοηθός</button>
   </nav>
   <div class="header-actions">
-    <button id="undo-btn" disabled title="Nothing to undo">↩ Undo</button>
-    <button id="solve-btn" class="primary">⚙ Solve</button>
+    <button id="undo-btn" disabled title="Δεν υπάρχει τίποτα για αναίρεση">↩ Αναίρεση</button>
+    <button id="solve-btn" class="primary">⚙ Επίλυση</button>
   </div>
 </header>
 
@@ -34,58 +34,59 @@
   <section id="tab-schedule" class="tab active">
     <div id="solve-status" class="status-bar hidden"></div>
     <div id="schedule-grids">
-      <p class="empty-note">No schedule yet — press <b>Solve</b> to generate the weekly timetable.</p>
+      <p class="empty-note">Δεν υπάρχει ακόμη πρόγραμμα — πατήστε <b>Επίλυση</b> για να δημιουργηθεί το εβδομαδιαίο πρόγραμμα.</p>
     </div>
   </section>
 
   <!-- ── Data tab ─────────────────────────────────────────────────── -->
   <section id="tab-data" class="tab">
     <div class="data-toolbar">
-      <span id="data-dirty" class="dirty-note hidden">Unsaved changes</span>
-      <button id="save-btn" class="primary">💾 Save changes</button>
-      <button id="reset-btn" class="danger">Reset to sample data</button>
+      <span id="data-dirty" class="dirty-note hidden">Μη αποθηκευμένες αλλαγές</span>
+      <button id="save-btn" class="primary">💾 Αποθήκευση αλλαγών</button>
+      <button id="reset-btn" class="danger">Επαναφορά δείγματος</button>
     </div>
     <div id="data-errors" class="error-box hidden"></div>
 
     <details id="erp-section" class="hidden" open>
-      <summary>Import from ERP</summary>
+      <summary>Εισαγωγή από ERP</summary>
       <div id="erp-sources" class="erp-sources"></div>
       <div id="erp-preview"></div>
-      <p class="hint">Reads active enrolments of the current academic period from each branch's
-        ERP database. Only ERP-imported records are updated/removed — manual entries are never touched.
-        Configure connections in <code>data/erp_sources.json</code> (see <code>erp_sources.example.json</code>).</p>
+      <p class="hint">Διαβάζει τις ενεργές εγγραφές της επιλεγμένης σχολικής περιόδου από τη βάση ERP κάθε
+        κτηρίου. Ενημερώνονται/αφαιρούνται μόνο εγγραφές που προήλθαν από το ERP — οι χειροκίνητες
+        καταχωρήσεις δεν πειράζονται ποτέ.
+        Ρύθμιση συνδέσεων στο <code>data/erp_sources.json</code> (βλ. <code>erp_sources.example.json</code>).</p>
     </details>
 
     <details open>
-      <summary>Opening hours</summary>
+      <summary>Ωράρια λειτουργίας</summary>
       <div id="hours-editor"></div>
-      <p class="hint">Format: <code>15:30-21:00</code> — leave empty for closed.</p>
+      <p class="hint">Μορφή: <code>15:30-21:00</code> — αφήστε κενό για κλειστά.</p>
     </details>
 
     <details open>
-      <summary>Teachers</summary>
+      <summary>Καθηγητές</summary>
       <div id="teachers-editor"></div>
-      <button class="add-btn" data-add="teacher">＋ Add teacher</button>
-      <p class="hint">Levels: comma-separated. Blocked: e.g. <code>Mon 16:00-18:00; Wed 17:00-19:00</code>.</p>
+      <button class="add-btn" data-add="teacher">＋ Προσθήκη καθηγητή</button>
+      <p class="hint">Επίπεδα: χωρισμένα με κόμμα. Μη διαθέσιμος/η: π.χ. <code>Δευ 16:00-18:00; Τετ 17:00-19:00</code>.</p>
     </details>
 
     <details open>
-      <summary>Rooms</summary>
+      <summary>Αίθουσες</summary>
       <div id="rooms-editor"></div>
-      <button class="add-btn" data-add="room">＋ Add room</button>
+      <button class="add-btn" data-add="room">＋ Προσθήκη αίθουσας</button>
     </details>
 
     <details open>
-      <summary>Classes</summary>
+      <summary>Τμήματα</summary>
       <div id="classes-editor"></div>
-      <button class="add-btn" data-add="class">＋ Add class</button>
+      <button class="add-btn" data-add="class">＋ Προσθήκη τμήματος</button>
     </details>
 
     <details open>
-      <summary>Students</summary>
+      <summary>Μαθητές</summary>
       <div id="students-editor"></div>
-      <button class="add-btn" data-add="student">＋ Add student</button>
-      <p class="hint">Students in the same sibling group get at least one shared day per week.</p>
+      <button class="add-btn" data-add="student">＋ Προσθήκη μαθητή</button>
+      <p class="hint">Μαθητές στην ίδια ομάδα αδελφών έχουν τουλάχιστον μία κοινή ημέρα την εβδομάδα.</p>
     </details>
   </section>
 
@@ -94,17 +95,17 @@
     <div id="ai-banner" class="ai-banner hidden"></div>
     <div id="chat-log">
       <div class="msg assistant">
-        <p>Hi! Tell me what changed and I'll prepare the data updates — you confirm, the solver reschedules. For example:</p>
+        <p>Γεια σας! Πείτε μου τι άλλαξε και θα ετοιμάσω τις αλλαγές στα δεδομένα — εσείς επιβεβαιώνετε, ο επιλύτης ξαναφτιάχνει το πρόγραμμα. Για παράδειγμα:</p>
         <ul>
-          <li>“Maria can't work Tuesdays anymore”</li>
-          <li>“New student Eleni joins B2 Gr.1, she has dance Wednesdays 5–7pm”</li>
-          <li>“Close branch B on Saturdays” • “Add a room Beta-3 at branch B”</li>
+          <li>«Η Μαρία δεν μπορεί πια Τρίτες»</li>
+          <li>«Νέα μαθήτρια Ελένη στο B2 Gr.1, έχει χορό Τετάρτες 5–7μμ»</li>
+          <li>«Κλείσε το κτήριο Β τα Σάββατα» • «Πρόσθεσε αίθουσα Beta-3 στο κτήριο Β»</li>
         </ul>
       </div>
     </div>
     <form id="chat-form">
-      <input id="chat-input" type="text" placeholder="Describe a change or ask a question…" autocomplete="off">
-      <button type="submit" class="primary" id="chat-send">Send</button>
+      <input id="chat-input" type="text" placeholder="Περιγράψτε μια αλλαγή ή κάντε μια ερώτηση…" autocomplete="off">
+      <button type="submit" class="primary" id="chat-send">Αποστολή</button>
     </form>
   </section>
 

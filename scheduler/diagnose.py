@@ -21,11 +21,11 @@ from .data import DAYS, tick_label
 from .solver import solve, RELAXABLE, _day_patterns, _qualified_teachers
 
 RELAX_LABELS = {
-    "patterns":       "the fixed day patterns (Mon/Wed, Tue/Thu…) — H2",
-    "young_cutoff":   "the young-learner end-time cutoff — H6",
-    "travel":         "the teacher travel-gap rule — H7",
-    "student_blocks": "the students' blocked time windows — H8",
-    "siblings":       "the sibling shared-day rule — H9",
+    "patterns":       "τα σταθερά μοτίβα ημερών (Δευ/Τετ, Τρί/Πέμ…) — H2",
+    "young_cutoff":   "το όριο λήξης για τους μικρούς μαθητές — H6",
+    "travel":         "τον κανόνα κενού μετακίνησης καθηγητών — H7",
+    "student_blocks": "τις ώρες μη διαθεσιμότητας των μαθητών — H8",
+    "siblings":       "τον κανόνα κοινής ημέρας αδελφών — H9",
 }
 
 
@@ -43,7 +43,8 @@ def _static_checks(school: dict) -> list[str]:
     for cls in school["classes"]:
         q = [t for t in school["teachers"] if cls["level"] in t["qualified_levels"]]
         if not q:
-            notes.append(f"{cls['name']}: no teacher is qualified for level {cls['level']}.")
+            notes.append(f"{cls['name']}: κανένας καθηγητής δεν είναι καταρτισμένος "
+                         f"για το επίπεδο {cls['level']}.")
             continue
         patterns = _day_patterns(school, cls)
         ok_pattern = False
@@ -53,8 +54,9 @@ def _static_checks(school: dict) -> list[str]:
                 break
         if not ok_pattern:
             names = ", ".join(t["name"] for t in q)
-            notes.append(f"{cls['name']}: qualified teachers ({names}) are not available "
-                         f"on any valid day pattern for {cls['sessions_per_week']}×/week.")
+            notes.append(f"{cls['name']}: οι καταρτισμένοι καθηγητές ({names}) δεν είναι "
+                         f"διαθέσιμοι σε κανένα έγκυρο μοτίβο ημερών για "
+                         f"{cls['sessions_per_week']}×/εβδομάδα.")
 
     # 2. young-learner classes must physically fit before the cutoff
     cutoff = settings["young_learner_cutoff"]
@@ -68,8 +70,9 @@ def _static_checks(school: dict) -> list[str]:
             for locs in school["day_hours"].values() for w in locs.values()
         )
         if not fits_somewhere:
-            notes.append(f"{cls['name']}: a {cls['periods_per_session']}-period session can never "
-                         f"end by the young-learner cutoff ({tick_label(cutoff)}) within opening hours.")
+            notes.append(f"{cls['name']}: μάθημα {cls['periods_per_session']} περιόδων δεν μπορεί "
+                         f"ποτέ να τελειώσει έως το όριο μικρών μαθητών ({tick_label(cutoff)}) "
+                         "εντός του ωραρίου λειτουργίας.")
 
     # 3. raw room capacity vs demand (whole week, all locations)
     demand = sum(c["periods_per_session"] * tpp * c["sessions_per_week"]
@@ -77,8 +80,9 @@ def _static_checks(school: dict) -> list[str]:
     capacity = sum(window_ticks(day, r["location"])
                    for day in DAYS for r in school["rooms"])
     if demand > capacity:
-        notes.append(f"Not enough room capacity: classes need {demand // 4} room-hours/week "
-                     f"but rooms offer only {capacity // 4} hours across all locations.")
+        notes.append(f"Ανεπαρκής χωρητικότητα αιθουσών: τα τμήματα χρειάζονται {demand // 4} "
+                     f"ώρες-αίθουσας/εβδομάδα αλλά οι αίθουσες προσφέρουν μόνο {capacity // 4} "
+                     "ώρες σε όλα τα κτήρια.")
 
     # 4. raw teacher capacity vs demand, per level
     for level in settings["levels"]:
@@ -93,8 +97,8 @@ def _static_checks(school: dict) -> list[str]:
             for d in t["available_days"]:
                 lvl_capacity += max(window_ticks(DAYS[d], loc) for loc in school["locations"])
         if lvl_demand > lvl_capacity:
-            notes.append(f"Level {level}: needs {lvl_demand // 4} teaching hours/week but "
-                         f"qualified teachers can cover at most {lvl_capacity // 4}.")
+            notes.append(f"Επίπεδο {level}: χρειάζεται {lvl_demand // 4} διδακτικές ώρες/εβδομάδα "
+                         f"αλλά οι καταρτισμένοι καθηγητές καλύπτουν το πολύ {lvl_capacity // 4}.")
 
     return notes
 
@@ -111,17 +115,17 @@ def diagnose(school: dict, time_limit_per_probe: int = 15) -> list[str]:
 
     if feasible_when:
         for key in feasible_when:
-            notes.append(f"A schedule EXISTS if you relax {RELAX_LABELS[key]} — "
-                         "that rule is what makes the current configuration unsolvable.")
+            notes.append(f"Πρόγραμμα ΥΠΑΡΧΕΙ αν χαλαρώσετε {RELAX_LABELS[key]} — "
+                         "αυτός ο κανόνας καθιστά ανέφικτη την τρέχουσα διαμόρφωση.")
     else:
         r = solve(school, time_limit_seconds=time_limit_per_probe, relax=set(RELAXABLE))
         if r["schedule"]:
-            notes.append("No single rule is responsible — only relaxing several rules together "
-                         "yields a schedule. The configuration is over-constrained; review "
-                         "teacher availability and opening hours.")
+            notes.append("Δεν ευθύνεται ένας μόνο κανόνας — πρόγραμμα προκύπτει μόνο αν "
+                         "χαλαρώσουν περισσότεροι κανόνες μαζί. Η διαμόρφωση είναι "
+                         "υπερ-περιορισμένη· ελέγξτε τη διαθεσιμότητα καθηγητών και τα ωράρια.")
         else:
-            notes.append("Even with all optional rules relaxed no schedule exists — this is a "
-                         "hard capacity problem (rooms, teachers or opening hours), "
-                         "not a rule conflict.")
+            notes.append("Ακόμη και με όλους τους προαιρετικούς κανόνες χαλαρωμένους δεν υπάρχει "
+                         "πρόγραμμα — πρόκειται για πρόβλημα χωρητικότητας (αίθουσες, καθηγητές "
+                         "ή ωράρια), όχι σύγκρουση κανόνων.")
 
     return notes

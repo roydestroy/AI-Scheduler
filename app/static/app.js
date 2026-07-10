@@ -2,6 +2,16 @@
 "use strict";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const GDAYS = ["Δευ", "Τρί", "Τετ", "Πέμ", "Παρ", "Σάβ"];
+const GDAYS_FULL = ["Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"];
+const STATUS_GR = { OPTIMAL: "ΒΕΛΤΙΣΤΟ", FEASIBLE: "ΕΦΙΚΤΟ", INFEASIBLE: "ΑΝΕΦΙΚΤΟ", UNKNOWN: "ΑΓΝΩΣΤΟ" };
+function dayIndexOf(s) {
+  s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const en = ["mon", "tue", "wed", "thu", "fri", "sat"];
+  const gr = ["δευ", "τρι", "τετ", "πεμ", "παρ", "σαβ"];
+  for (let i = 0; i < 6; i++) if (s.startsWith(en[i]) || s.startsWith(gr[i])) return i;
+  return -1;
+}
 const $ = (sel) => document.querySelector(sel);
 
 let school = null;          // current school dict (mirrors server)
@@ -27,23 +37,23 @@ function parseWindowsText(text) {
   for (const seg of text.split(";")) {
     const s = seg.trim();
     if (!s) continue;
-    const m = /^(\w+)\s+(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/.exec(s);
+    const m = /^(\S+)\s+(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/.exec(s);
     if (!m) return null;
-    const d = DAYS.findIndex((x) => m[1].toLowerCase().startsWith(x.toLowerCase()));
+    const d = dayIndexOf(m[1]);
     const o = parseTimeStr(m[2]), c = parseTimeStr(m[3]);
     if (d < 0 || o === null || c === null || o >= c) return null;
     out.push([d, o, c]);
   }
   return out;
 }
-const windowsToText = (ws) => (ws || []).map((w) => `${DAYS[w[0]]} ${tickLabel(w[1])}-${tickLabel(w[2])}`).join("; ");
+const windowsToText = (ws) => (ws || []).map((w) => `${GDAYS[w[0]]} ${tickLabel(w[1])}-${tickLabel(w[2])}`).join("; ");
 
 async function api(path, opts = {}) {
   const resp = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
-  if (resp.status === 401) { location.reload(); throw new Error("Logged out."); }
+  if (resp.status === 401) { location.reload(); throw new Error("Αποσυνδεθήκατε."); }
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const detail = body.detail;
@@ -77,8 +87,8 @@ function switchTab(name) {
 /* ── schedule rendering ────────────────────────────────────────── */
 
 const CHANGE_LABELS = {
-  moved: ["🔀", "moved"], teacher: ["👤", "teacher changes"], room: ["🚪", "room changes"],
-  added: ["＋", "new"], removed: ["－", "removed"],
+  moved: ["🔀", "μετακινήθηκαν"], teacher: ["👤", "αλλαγές καθηγητή"], room: ["🚪", "αλλαγές αίθουσας"],
+  added: ["＋", "νέα"], removed: ["－", "αφαιρέθηκαν"],
 };
 
 function renderStatus(result) {
@@ -86,11 +96,11 @@ function renderStatus(result) {
   bar.classList.remove("hidden");
   bar.className = `status-bar status-${result.status || "UNKNOWN"}`;
   const pen = result.objective !== null && result.objective !== undefined
-    ? `<span>Penalty: <b>${result.objective}</b> (0 = all preferences met)</span>` : "";
+    ? `<span>Ποινή: <b>${result.objective}</b> (0 = όλες οι προτιμήσεις ικανοποιούνται)</span>` : "";
   const warns = (result.warnings || []).map((w) => `<div class="warn-line">⚠ ${esc(w)}</div>`).join("");
   const exports = (result.schedule || []).length
     ? `<span class="export-links"><a href="/api/export/pdf">⬇ PDF</a>
-       <a href="/api/export/ics" title="Import into Google Calendar / Outlook / Apple Calendar">⬇ Calendar (.ics)</a></span>`
+       <a href="/api/export/ics" title="Εισαγωγή σε Google Calendar / Outlook / Apple Calendar">⬇ Ημερολόγιο (.ics)</a></span>`
     : "";
 
   // "what changed" summary + collapsible detail list
@@ -102,16 +112,16 @@ function renderStatus(result) {
       .map(([t, n]) => `<span class="chg-chip chg-${t}">${CHANGE_LABELS[t][0]} ${n} ${CHANGE_LABELS[t][1]}</span>`)
       .join(" ");
     changesHtml = `<details class="changes-panel" open>
-      <summary>${ch.summary.unchanged} unchanged · ${chips}</summary>
+      <summary>${ch.summary.unchanged} αμετάβλητα · ${chips}</summary>
       <ul>${ch.items.map((i) =>
         `<li class="chg-${i.type}">${CHANGE_LABELS[i.type][0]} ${esc(i.text)}</li>`).join("")}</ul>
     </details>`;
   } else if (ch && !ch.items.length) {
-    changesHtml = `<span class="chg-chip chg-none">✓ identical to the previous schedule</span>`;
+    changesHtml = `<span class="chg-chip chg-none">✓ πανομοιότυπο με το προηγούμενο πρόγραμμα</span>`;
   }
 
-  bar.innerHTML = `<span class="big">${esc(result.status || "—")}</span>
-    <span>${(result.schedule || []).length} sessions</span> ${pen} ${exports} ${changesHtml} ${warns}`;
+  bar.innerHTML = `<span class="big">${esc(STATUS_GR[result.status] || result.status || "—")}</span>
+    <span>${(result.schedule || []).length} μαθήματα</span> ${pen} ${exports} ${changesHtml} ${warns}`;
 }
 
 function changedKeyMap(result) {
@@ -129,7 +139,7 @@ function renderSchedule(result) {
   host.innerHTML = "";
   const sched = result.schedule || [];
   if (!sched.length) {
-    host.innerHTML = `<p class="empty-note">No sessions scheduled.</p>`;
+    host.innerHTML = `<p class="empty-note">Δεν προγραμματίστηκαν μαθήματα.</p>`;
     return;
   }
 
@@ -153,7 +163,7 @@ function renderSchedule(result) {
 
     const card = document.createElement("div");
     card.className = "day-card";
-    card.innerHTML = `<h2>${DAYS[day]}</h2>`;
+    card.innerHTML = `<h2>${GDAYS_FULL[day]}</h2>`;
     const grid = document.createElement("div");
     grid.className = "day-grid";
     grid.style.gridTemplateColumns = `56px repeat(${rooms.length}, minmax(110px, 1fr))`;
@@ -201,9 +211,9 @@ function renderSchedule(result) {
 
 $("#solve-btn").addEventListener("click", async () => {
   const btn = $("#solve-btn");
-  if (dirty && !confirm("You have unsaved data changes — solve with the last saved data anyway?")) return;
+  if (dirty && !confirm("Έχετε μη αποθηκευμένες αλλαγές — να γίνει επίλυση με τα τελευταία αποθηκευμένα δεδομένα;")) return;
   btn.disabled = true;
-  btn.innerHTML = `<span class="spinner">⚙</span> Solving…`;
+  btn.innerHTML = `<span class="spinner">⚙</span> Επίλυση…`;
   syncSolving = true;
   try {
     const result = await api("/api/solve", { method: "POST", body: JSON.stringify({}) });
@@ -212,11 +222,11 @@ $("#solve-btn").addEventListener("click", async () => {
     updateUndo();
     try { scheduleRev = (await api("/api/rev")).schedule_rev; } catch {}
   } catch (e) {
-    alert("Solve failed:\n" + e.message);
+    alert("Η επίλυση απέτυχε:\n" + e.message);
   } finally {
     syncSolving = false;
     btn.disabled = false;
-    btn.innerHTML = "⚙ Solve";
+    btn.innerHTML = "⚙ Επίλυση";
   }
 });
 
@@ -242,13 +252,13 @@ const levelOptions = (selected) => school.settings.levels.map(
 
 function renderHours() {
   const locIds = Object.keys(school.locations);
-  let html = `<table class="editor"><tr><th>Day</th>${locIds.map((l) => `<th>${esc(l)} — ${esc(school.locations[l])}</th>`).join("")}</tr>`;
+  let html = `<table class="editor"><tr><th>Ημέρα</th>${locIds.map((l) => `<th>${esc(l)} — ${esc(school.locations[l])}</th>`).join("")}</tr>`;
   for (const day of DAYS) {
-    html += `<tr><td><b>${day}</b></td>`;
+    html += `<tr><td><b>${GDAYS_FULL[DAYS.indexOf(day)]}</b></td>`;
     for (const loc of locIds) {
       const w = (school.day_hours[day] || {})[loc];
       const val = w ? `${tickLabel(w.open)}-${tickLabel(w.close)}` : "";
-      html += `<td><input type="text" data-day="${day}" data-loc="${esc(loc)}" value="${val}" placeholder="closed"></td>`;
+      html += `<td><input type="text" data-day="${day}" data-loc="${esc(loc)}" value="${val}" placeholder="κλειστά"></td>`;
     }
     html += `</tr>`;
   }
@@ -263,7 +273,7 @@ function renderHours() {
     const m = /^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/.exec(v);
     const o = m && parseTimeStr(m[1]), c = m && parseTimeStr(m[2]);
     if (!m || o === null || c === null || o >= c) {
-      alert(`Invalid hours "${v}" — use e.g. 15:30-21:00 or leave empty.`);
+      alert(`Μη έγκυρο ωράριο "${v}" — γράψτε π.χ. 15:30-21:00 ή αφήστε κενό.`);
       renderHours(); return;
     }
     school.day_hours[day][loc] = { open: o, close: c };
@@ -273,13 +283,13 @@ function renderHours() {
 
 function dayChecks(days, idx, kind) {
   return `<div class="day-checks">` + DAYS.map((d, i) =>
-    `<label>${d[0]}<input type="checkbox" data-kind="${kind}" data-idx="${idx}" data-day="${i}"
+    `<label>${GDAYS[i][0]}<input type="checkbox" data-kind="${kind}" data-idx="${idx}" data-day="${i}"
       ${days.includes(i) ? "checked" : ""}></label>`).join("") + `</div>`;
 }
 
 function renderTeachers() {
   let html = `<table class="editor"><tr>
-    <th>Id</th><th>Name</th><th>Home</th><th>Qualified levels</th><th>Days</th><th>Blocked times</th><th></th></tr>`;
+    <th>Id</th><th>Όνομα</th><th>Έδρα</th><th>Επίπεδα</th><th>Ημέρες</th><th>Μη διαθέσιμος/η</th><th></th></tr>`;
   school.teachers.forEach((t, i) => {
     html += `<tr>
       <td>${esc(t.id)}</td>
@@ -287,8 +297,8 @@ function renderTeachers() {
       <td><select data-f="home" data-i="${i}">${locOptions(t.home)}</select></td>
       <td><input type="text" data-f="levels" data-i="${i}" value="${esc(t.qualified_levels.join(", "))}"></td>
       <td>${dayChecks(t.available_days, i, "teacher")}</td>
-      <td><input type="text" data-f="blocked" data-i="${i}" value="${esc(windowsToText(t.blocked_windows))}" placeholder="Mon 16:00-18:00"></td>
-      <td><button class="row-del" data-i="${i}" title="Remove">✕</button></td></tr>`;
+      <td><input type="text" data-f="blocked" data-i="${i}" value="${esc(windowsToText(t.blocked_windows))}" placeholder="Δευ 16:00-18:00"></td>
+      <td><button class="row-del" data-i="${i}" title="Αφαίρεση">✕</button></td></tr>`;
   });
   html += `</table>`;
   const host = $("#teachers-editor");
@@ -302,7 +312,7 @@ function renderTeachers() {
     else if (f === "levels") t.qualified_levels = el.value.split(",").map((s) => s.trim()).filter(Boolean);
     else if (f === "blocked") {
       const ws = parseWindowsText(el.value);
-      if (ws === null) { alert("Invalid blocked-times format. Use: Mon 16:00-18:00; Wed 17:00-19:00"); renderTeachers(); return; }
+      if (ws === null) { alert("Μη έγκυρη μορφή. Γράψτε: Δευ 16:00-18:00; Τετ 17:00-19:00"); renderTeachers(); return; }
       t.blocked_windows = ws;
     }
     setDirty(true);
@@ -317,14 +327,14 @@ function renderTeachers() {
   }));
   host.querySelectorAll(".row-del").forEach((b) => b.addEventListener("click", () => {
     const t = school.teachers[+b.dataset.i];
-    if (!confirm(`Remove teacher ${t.name}?`)) return;
+    if (!confirm(`Να αφαιρεθεί ο/η καθηγητής/τρια ${t.name};`)) return;
     school.teachers.splice(+b.dataset.i, 1);
     setDirty(true); renderTeachers();
   }));
 }
 
 function renderRooms() {
-  let html = `<table class="editor"><tr><th>Id</th><th>Name</th><th>Location</th><th></th></tr>`;
+  let html = `<table class="editor"><tr><th>Id</th><th>Όνομα</th><th>Κτήριο</th><th></th></tr>`;
   school.rooms.forEach((r, i) => {
     html += `<tr><td>${esc(r.id)}</td>
       <td><input type="text" data-f="name" data-i="${i}" value="${esc(r.name)}"></td>
@@ -338,7 +348,7 @@ function renderRooms() {
     setDirty(true);
   }));
   host.querySelectorAll(".row-del").forEach((b) => b.addEventListener("click", () => {
-    if (!confirm(`Remove room ${school.rooms[+b.dataset.i].name}?`)) return;
+    if (!confirm(`Να αφαιρεθεί η αίθουσα ${school.rooms[+b.dataset.i].name};`)) return;
     school.rooms.splice(+b.dataset.i, 1);
     setDirty(true); renderRooms();
   }));
@@ -346,7 +356,7 @@ function renderRooms() {
 
 function renderClasses() {
   let html = `<table class="editor"><tr>
-    <th>Id</th><th>Name</th><th>Level</th><th>Periods/session</th><th>Sessions/week</th><th>Preferred loc.</th><th title="Prefer a Saturday slot">Sat pref.</th><th></th></tr>`;
+    <th>Id</th><th>Όνομα</th><th>Επίπεδο</th><th>Περίοδοι/μάθημα</th><th>Μαθήματα/εβδ.</th><th>Προτιμ. κτήριο</th><th title="Προτίμηση για ώρα Σαββάτου">Προτ. Σαβ.</th><th></th></tr>`;
   school.classes.forEach((c, i) => {
     html += `<tr><td>${esc(c.id)}</td>
       <td><input type="text" data-f="name" data-i="${i}" value="${esc(c.name)}"></td>
@@ -371,7 +381,7 @@ function renderClasses() {
   }));
   host.querySelectorAll(".row-del").forEach((b) => b.addEventListener("click", () => {
     const c = school.classes[+b.dataset.i];
-    if (!confirm(`Remove class ${c.name} (and its students' assignments)?`)) return;
+    if (!confirm(`Να αφαιρεθεί το τμήμα ${c.name} (και οι εγγραφές των μαθητών του);`)) return;
     school.classes.splice(+b.dataset.i, 1);
     school.students = school.students.filter((s) => s.class_id !== c.id);
     setDirty(true); renderClasses(); renderStudents();
@@ -382,13 +392,13 @@ function renderStudents() {
   const clsOptions = (sel) => school.classes.map(
     (c) => `<option value="${esc(c.id)}" ${c.id === sel ? "selected" : ""}>${esc(c.name)}</option>`).join("");
   let html = `<table class="editor"><tr>
-    <th>Id</th><th>Name</th><th>Class</th><th>Sibling group</th><th>Blocked times</th><th>Note</th><th></th></tr>`;
+    <th>Id</th><th>Όνομα</th><th>Τμήμα</th><th>Ομάδα αδελφών</th><th>Μη διαθέσιμος/η</th><th>Σημείωση</th><th></th></tr>`;
   school.students.forEach((s, i) => {
     html += `<tr><td>${esc(s.id)}</td>
       <td><input type="text" data-f="name" data-i="${i}" value="${esc(s.name)}"></td>
       <td><select data-f="class_id" data-i="${i}">${clsOptions(s.class_id)}</select></td>
       <td><input type="text" class="narrow" data-f="sibling_group" data-i="${i}" value="${esc(s.sibling_group || "")}" placeholder="—"></td>
-      <td><input type="text" data-f="blocked" data-i="${i}" value="${esc(windowsToText(s.blocked_windows))}" placeholder="Mon 16:00-18:00"></td>
+      <td><input type="text" data-f="blocked" data-i="${i}" value="${esc(windowsToText(s.blocked_windows))}" placeholder="Δευ 16:00-18:00"></td>
       <td><input type="text" data-f="note" data-i="${i}" value="${esc(s.note || "")}"></td>
       <td><button class="row-del" data-i="${i}">✕</button></td></tr>`;
   });
@@ -399,14 +409,14 @@ function renderStudents() {
     const f = el.dataset.f;
     if (f === "blocked") {
       const ws = parseWindowsText(el.value);
-      if (ws === null) { alert("Invalid blocked-times format. Use: Mon 16:00-18:00; Wed 17:00-19:00"); renderStudents(); return; }
+      if (ws === null) { alert("Μη έγκυρη μορφή. Γράψτε: Δευ 16:00-18:00; Τετ 17:00-19:00"); renderStudents(); return; }
       s.blocked_windows = ws;
     } else if (f === "sibling_group") s.sibling_group = el.value.trim() || null;
     else s[f] = el.value.trim();
     setDirty(true);
   }));
   host.querySelectorAll(".row-del").forEach((b) => b.addEventListener("click", () => {
-    if (!confirm(`Remove student ${school.students[+b.dataset.i].name}?`)) return;
+    if (!confirm(`Να αφαιρεθεί ο/η μαθητής/τρια ${school.students[+b.dataset.i].name};`)) return;
     school.students.splice(+b.dataset.i, 1);
     setDirty(true); renderStudents();
   }));
@@ -425,20 +435,20 @@ document.querySelectorAll(".add-btn").forEach((btn) => btn.addEventListener("cli
   const firstLoc = Object.keys(school.locations)[0];
   switch (btn.dataset.add) {
     case "teacher":
-      school.teachers.push({ id: nextId(school.teachers, "T"), name: "New teacher", home: firstLoc,
+      school.teachers.push({ id: nextId(school.teachers, "T"), name: "Νέος καθηγητής", home: firstLoc,
         qualified_levels: [], available_days: [0, 1, 2, 3, 4, 5], blocked_windows: [] });
       renderTeachers(); break;
     case "room":
-      school.rooms.push({ id: nextId(school.rooms, "R"), name: "New room", location: firstLoc });
+      school.rooms.push({ id: nextId(school.rooms, "R"), name: "Νέα αίθουσα", location: firstLoc });
       renderRooms(); break;
     case "class":
-      school.classes.push({ id: nextId(school.classes, "C"), name: "New class",
+      school.classes.push({ id: nextId(school.classes, "C"), name: "Νέο τμήμα",
         level: school.settings.levels[0], periods_per_session: 2, sessions_per_week: 2,
         preferred_location: firstLoc });
       renderClasses(); break;
     case "student": {
-      if (!school.classes.length) { alert("Add a class first."); return; }
-      school.students.push({ id: nextId(school.students, "S"), name: "New student",
+      if (!school.classes.length) { alert("Προσθέστε πρώτα ένα τμήμα."); return; }
+      school.students.push({ id: nextId(school.students, "S"), name: "Νέος μαθητής",
         class_id: school.classes[0].id, sibling_group: null, blocked_windows: [], note: "" });
       renderStudents(); break;
     }
@@ -460,23 +470,23 @@ $("#save-btn").addEventListener("click", async () => {
   } catch (e) {
     if (e.status === 409) {
       errBox.innerHTML = `⚠ ${esc(e.message)}<br>
-        <button class="add-btn" onclick="location.reload()">↻ Reload now</button>`;
+        <button class="add-btn" onclick="location.reload()">↻ Ανανέωση τώρα</button>`;
     } else {
-      errBox.textContent = "Cannot save:\n" + e.message;
+      errBox.textContent = "Αδυναμία αποθήκευσης:\n" + e.message;
     }
     errBox.classList.remove("hidden");
   }
 });
 
 $("#reset-btn").addEventListener("click", async () => {
-  if (!confirm("Discard ALL data and restore the sample school?")) return;
+  if (!confirm("Να διαγραφούν ΟΛΑ τα δεδομένα και να επανέλθει το δείγμα;")) return;
   const body = await api("/api/school/reset", { method: "POST" });
   school = body.school;
   schoolRev = body.rev;
   setDirty(false);
   renderData();
   updateUndo();
-  $("#schedule-grids").innerHTML = `<p class="empty-note">Data was reset — press <b>Solve</b> to generate a new timetable.</p>`;
+  $("#schedule-grids").innerHTML = `<p class="empty-note">Έγινε επαναφορά — πατήστε <b>Επίλυση</b> για νέο πρόγραμμα.</p>`;
   $("#solve-status").classList.add("hidden");
 });
 
@@ -497,14 +507,14 @@ $("#ws-select").addEventListener("change", async () => {
 });
 
 $("#ws-new").addEventListener("click", async () => {
-  const name = prompt("Name for the new workspace (e.g. 2026-2027):");
+  const name = prompt("Όνομα νέου χώρου εργασίας (π.χ. 2026-2027):");
   if (!name || !name.trim()) return;
   const seed = confirm(
-    "Mirror the current workspace into it?\n\n" +
-    "OK  = copy teachers, rooms, hours and classes, and keep the current " +
-    "schedule as the stable baseline (recommended for the next school year — " +
-    "the solver will try to keep everyone's time slots and teachers).\n\n" +
-    "Cancel = start from the blank sample data.");
+    "Να αντιγραφεί ο τρέχων χώρος εργασίας;\n\n" +
+    "OK = αντιγραφή καθηγητών, αιθουσών, ωραρίων και τμημάτων, με το τρέχον " +
+    "πρόγραμμα ως σταθερή βάση (προτείνεται για την επόμενη χρονιά — ο επιλύτης " +
+    "θα προσπαθήσει να κρατήσει ώρες και καθηγητές).\n\n" +
+    "Άκυρο = εκκίνηση από το κενό δείγμα.");
   await api("/api/workspaces", {
     method: "POST", body: JSON.stringify({ name: name.trim(), seed_from_active: seed }),
   });
@@ -517,10 +527,10 @@ async function updateUndo() {
     const btn = $("#undo-btn");
     if (body.items.length) {
       btn.disabled = false;
-      btn.title = `Undo: ${body.items[0].label}`;
+      btn.title = `Αναίρεση: ${body.items[0].label}`;
     } else {
       btn.disabled = true;
-      btn.title = "Nothing to undo";
+      btn.title = "Δεν υπάρχει τίποτα για αναίρεση";
     }
   } catch { /* non-fatal */ }
 }
@@ -538,11 +548,11 @@ $("#undo-btn").addEventListener("click", async () => {
       renderSchedule(body.result);
     } else {
       $("#schedule-grids").innerHTML =
-        `<p class="empty-note">Undone: ${esc(body.label)} — press <b>Solve</b> to regenerate the timetable.</p>`;
+        `<p class="empty-note">Αναιρέθηκε: ${esc(body.label)} — πατήστε <b>Επίλυση</b> για νέο πρόγραμμα.</p>`;
       $("#solve-status").classList.add("hidden");
     }
   } catch (e) {
-    alert("Undo failed: " + e.message);
+    alert("Η αναίρεση απέτυχε: " + e.message);
   } finally {
     updateUndo();
   }
@@ -560,7 +570,7 @@ async function renderErpSources() {
     for (const s of body.sources) {
       const btn = document.createElement("button");
       btn.className = "add-btn";
-      btn.textContent = `⇩ Preview import from ${s.name} (location ${s.location})`;
+      btn.textContent = `⇩ Προεπισκόπηση εισαγωγής από ${s.name} (κτήριο ${s.location})`;
       btn.addEventListener("click", () => erpStart(s, btn));
       host.appendChild(btn);
     }
@@ -570,7 +580,7 @@ async function renderErpSources() {
 async function erpStart(source, btn) {
   const host = $("#erp-preview");
   btn.disabled = true;
-  host.innerHTML = `<p class="hint"><span class="spinner">⇩</span> Reading ERP database…</p>`;
+  host.innerHTML = `<p class="hint"><span class="spinner">⇩</span> Ανάγνωση βάσης ERP…</p>`;
   try {
     // let the user pick the academic period explicitly — the ERP's
     // "current" flag is only the preselected default
@@ -582,10 +592,10 @@ async function erpStart(source, btn) {
     if (periods.length) {
       const current = periods.find((p) => p.is_current) || periods[0];
       periodId = current.id;
-      host.innerHTML = `<p class="erp-period-row"><label>Academic period:
+      host.innerHTML = `<p class="erp-period-row"><label>Σχολική περίοδος:
         <select id="erp-period">${periods.map((p) =>
           `<option value="${esc(p.id)}" ${p.id === periodId ? "selected" : ""}>
-             ${esc(p.name)}${p.is_current ? " (current in ERP)" : ""}</option>`).join("")}
+             ${esc(p.name)}${p.is_current ? " (τρέχουσα στο ERP)" : ""}</option>`).join("")}
         </select></label></p><div id="erp-plan"></div>`;
       $("#erp-period").addEventListener("change", () =>
         erpPreview(source.key, $("#erp-period").value));
@@ -602,7 +612,7 @@ async function erpStart(source, btn) {
 
 async function erpPreview(key, periodId) {
   const planHost = $("#erp-plan");
-  planHost.innerHTML = `<p class="hint"><span class="spinner">⇩</span> Loading enrolments…</p>`;
+  planHost.innerHTML = `<p class="hint"><span class="spinner">⇩</span> Φόρτωση εγγραφών…</p>`;
   try {
     const plan = await api("/api/erp/preview", {
       method: "POST",
@@ -618,12 +628,12 @@ async function erpPreview(key, periodId) {
 function renderErpPlan(plan) {
   const host = $("#erp-plan") || $("#erp-preview");
   const li = (arr, max = 12) => arr.slice(0, max).map((x) => `<li>${esc(x)}</li>`).join("")
-    + (arr.length > max ? `<li>… and ${arr.length - max} more</li>` : "");
+    + (arr.length > max ? `<li>… και ${arr.length - max} ακόμη</li>` : "");
 
-  let html = `<h3>Import preview — ${plan.total_rows} active enrolments</h3>
-    <p class="hint">Adjust how each level code is scheduled, then apply. Settings are remembered.</p>
+  let html = `<h3>Προεπισκόπηση εισαγωγής — ${plan.total_rows} ενεργές εγγραφές</h3>
+    <p class="hint">Ρυθμίστε πώς προγραμματίζεται κάθε κωδικός επιπέδου και εφαρμόστε. Οι ρυθμίσεις απομνημονεύονται.</p>
     <table class="editor" id="erp-mapping">
-      <tr><th>Code</th><th>Students</th><th>Import</th><th>Periods/session</th><th>Sessions/week</th><th>Young learner</th></tr>`;
+      <tr><th>Κωδικός</th><th>Μαθητές</th><th>Εισαγωγή</th><th>Περίοδοι/μάθημα</th><th>Μαθήματα/εβδ.</th><th>Μικροί μαθητές</th></tr>`;
   for (const c of plan.codes) {
     html += `<tr data-code="${esc(c.code)}">
       <td><b>${esc(c.code)}</b></td><td>${c.students}</td>
@@ -636,24 +646,24 @@ function renderErpPlan(plan) {
   html += `</table>`;
 
   const sections = [
-    ["New classes", plan.new_classes], ["New students", plan.new_students],
-    ["Level changes", plan.updated_students], ["Removed students", plan.removed_students],
-    ["Removed classes", plan.removed_classes],
-    ["Schedule baseline follows the students", plan.baseline_carried || []],
+    ["Νέα τμήματα", plan.new_classes], ["Νέοι μαθητές", plan.new_students],
+    ["Αλλαγές επιπέδου", plan.updated_students], ["Μαθητές που αφαιρούνται", plan.removed_students],
+    ["Τμήματα που αφαιρούνται", plan.removed_classes],
+    ["Η βάση προγράμματος ακολουθεί τους μαθητές", plan.baseline_carried || []],
   ];
   for (const [title, arr] of sections) {
     if (arr.length) html += `<p><b>${title} (${arr.length}):</b></p><ul>${li(arr)}</ul>`;
   }
   const skipped = Object.entries(plan.skipped || {});
   if (skipped.length) {
-    html += `<p class="hint">Skipped codes (not imported): ${
+    html += `<p class="hint">Κωδικοί που παραλείπονται (χωρίς εισαγωγή): ${
       skipped.map(([c, n]) => `${esc(c)} (${n})`).join(", ")}</p>`;
   }
   for (const w of plan.warnings || []) html += `<div class="warn-line">⚠ ${esc(w)}</div>`;
 
   html += `<div class="data-toolbar" style="justify-content:flex-start">
-    <button class="primary" id="erp-apply">✓ Apply import</button>
-    <button class="add-btn" id="erp-cancel">Cancel</button></div>`;
+    <button class="primary" id="erp-apply">✓ Εφαρμογή εισαγωγής</button>
+    <button class="add-btn" id="erp-cancel">Άκυρο</button></div>`;
   host.innerHTML = html;
 
   $("#erp-cancel").addEventListener("click", () => { $("#erp-preview").innerHTML = ""; });
@@ -679,9 +689,9 @@ function renderErpPlan(plan) {
       setDirty(false);
       renderData();
       updateUndo();
-      $("#erp-preview").innerHTML = `<div class="status-bar status-OPTIMAL"><span class="big">Imported ✓</span>
-        <span>${body.plan.new_students.length} new, ${body.plan.updated_students.length} changed,
-        ${body.plan.removed_students.length} removed students — press Solve to reschedule.</span></div>`;
+      $("#erp-preview").innerHTML = `<div class="status-bar status-OPTIMAL"><span class="big">Εισαγωγή ✓</span>
+        <span>${body.plan.new_students.length} νέοι, ${body.plan.updated_students.length} με αλλαγές,
+        ${body.plan.removed_students.length} αφαιρέθηκαν — πατήστε Επίλυση για νέο πρόγραμμα.</span></div>`;
     } catch (e) {
       host.insertAdjacentHTML("beforeend", `<div class="error-box">${esc(e.message)}</div>`);
       $("#erp-apply").disabled = false;
@@ -702,20 +712,20 @@ async function checkAI() {
       banner.classList.add("hidden");
     } else if (st.reachable) {
       pill.className = "pill pill-bad";
-      pill.textContent = "AI: model missing";
-      banner.textContent = `The server at ${st.base_url} is running but model "${st.model}" is not installed. ${st.hint || ""}`;
+      pill.textContent = "AI: λείπει το μοντέλο";
+      banner.textContent = `Ο διακομιστής στο ${st.base_url} τρέχει αλλά το μοντέλο "${st.model}" δεν είναι εγκατεστημένο. ${st.hint || ""}`;
       banner.classList.remove("hidden");
     } else {
       pill.className = "pill pill-bad";
-      pill.textContent = "AI: offline";
-      banner.innerHTML = `No local AI found at <b>${esc(st.base_url)}</b>. The assistant needs a free local model:
-        install <a href="https://ollama.com" target="_blank">Ollama</a>, then run
-        <code>ollama pull ${esc(st.model)}</code>. Everything else in the app works without it.`;
+      pill.textContent = "AI: εκτός σύνδεσης";
+      banner.innerHTML = `Δεν βρέθηκε τοπικό AI στο <b>${esc(st.base_url)}</b>. Ο βοηθός χρειάζεται ένα δωρεάν τοπικό μοντέλο:
+        εγκαταστήστε το <a href="https://ollama.com" target="_blank">Ollama</a> και εκτελέστε
+        <code>ollama pull ${esc(st.model)}</code>. Όλα τα υπόλοιπα λειτουργούν χωρίς αυτό.`;
       banner.classList.remove("hidden");
     }
   } catch {
     pill.className = "pill pill-unknown";
-    pill.textContent = "AI: unknown";
+    pill.textContent = "AI: άγνωστο";
   }
 }
 
@@ -732,13 +742,13 @@ function addProposal(operations, preview, errors) {
   const card = document.createElement("div");
   card.className = "proposal";
   const okToApply = !errors.length && operations.length;
-  card.innerHTML = `<h3>Proposed changes</h3>
+  card.innerHTML = `<h3>Προτεινόμενες αλλαγές</h3>
     <ul>${preview.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>
     ${errors.length ? `<div class="op-errors">⚠ ${errors.map(esc).join("<br>⚠ ")}</div>` : ""}
     <div class="actions">
-      ${okToApply ? `<button class="primary" data-act="apply-solve">✓ Apply &amp; re-solve</button>
-                     <button class="primary" data-act="apply">Apply only</button>` : ""}
-      <button class="ghost" data-act="dismiss">Dismiss</button>
+      ${okToApply ? `<button class="primary" data-act="apply-solve">✓ Εφαρμογή &amp; επίλυση</button>
+                     <button class="primary" data-act="apply">Μόνο εφαρμογή</button>` : ""}
+      <button class="ghost" data-act="dismiss">Απόρριψη</button>
     </div>`;
   $("#chat-log").appendChild(card);
   $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
@@ -762,14 +772,14 @@ function addProposal(operations, preview, errors) {
       if (body.result) {
         renderSchedule(body.result);
         try { scheduleRev = (await api("/api/rev")).schedule_rev; } catch {}
-        addMsg("system", `Applied ✓ — re-solved: ${esc(body.result.status)}${
-          body.result.objective !== null ? `, penalty ${body.result.objective}` : ""}. See the Schedule tab.`);
+        addMsg("system", `Εφαρμόστηκε ✓ — νέο πρόγραμμα: ${esc(STATUS_GR[body.result.status] || body.result.status)}${
+          body.result.objective !== null ? `, ποινή ${body.result.objective}` : ""}. Δείτε την καρτέλα Πρόγραμμα.`);
       } else {
-        addMsg("system", "Applied ✓ — press Solve to refresh the timetable.");
+        addMsg("system", "Εφαρμόστηκε ✓ — πατήστε Επίλυση για ανανέωση του προγράμματος.");
       }
     } catch (e) {
       btn.disabled = false;
-      addMsg("error", `Could not apply: ${esc(e.message)}`);
+      addMsg("error", `Αδυναμία εφαρμογής: ${esc(e.message)}`);
     }
   }));
 }
@@ -783,14 +793,14 @@ $("#chat-form").addEventListener("submit", async (ev) => {
   addMsg("user", esc(text));
   chatHistory.push({ role: "user", content: text });
 
-  const thinking = addMsg("assistant", `<span class="spinner">🤔</span> thinking…`);
+  const thinking = addMsg("assistant", `<span class="spinner">🤔</span> σκέφτομαι…`);
   $("#chat-send").disabled = true;
   try {
     const body = await api("/api/assistant/chat", {
       method: "POST",
       body: JSON.stringify({ message: text, history: chatHistory.slice(0, -1) }),
     });
-    thinking.innerHTML = esc(body.reply || "(no reply)");
+    thinking.innerHTML = esc(body.reply || "(καμία απάντηση)");
     chatHistory.push({ role: "assistant", content: body.reply });
     if (body.operations.length || body.errors.length) {
       addProposal(body.operations, body.preview, body.errors);
@@ -816,9 +826,9 @@ async function syncPoll() {
     if (rev.school_rev !== schoolRev) {
       if (dirty) {
         const errBox = $("#data-errors");
-        errBox.innerHTML = `⚠ Someone else changed the school data on another computer. ` +
-          `Saving will be rejected — <button class="add-btn" onclick="location.reload()">↻ reload to sync</button> ` +
-          `(your unsaved edits will be lost).`;
+        errBox.innerHTML = `⚠ Κάποιος άλλος άλλαξε τα δεδομένα από άλλον υπολογιστή. ` +
+          `Η αποθήκευση θα απορριφθεί — <button class="add-btn" onclick="location.reload()">↻ ανανέωση για συγχρονισμό</button> ` +
+          `(οι μη αποθηκευμένες αλλαγές σας θα χαθούν).`;
         errBox.classList.remove("hidden");
       } else {
         const body = await api("/api/school");

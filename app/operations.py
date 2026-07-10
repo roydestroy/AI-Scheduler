@@ -3,13 +3,14 @@ Structured operations on the school configuration.
 
 The AI assistant never edits the data directly: it proposes a list of
 operations (JSON), we validate them against the current school, show the
-user a human-readable preview, and only apply them after confirmation.
+user a human-readable preview (in Greek), and only apply them after
+confirmation.
 
 Every operation handler works on a deep copy and returns a description
 line for the preview, raising OpError on any problem.
 
 Value conventions (friendly to small local models):
-  • days:            "Mon" | "Monday" | 0-based index
+  • days:            "Mon" | "Δευτέρα" | "Δευ" | 0-based index
   • times:           "17:30" (24h)
   • blocked windows: {"day": "Tue", "from": "16:00", "to": "18:00"}
                      (a bare [day, "16:00", "18:00"] list also works)
@@ -20,15 +21,26 @@ Value conventions (friendly to small local models):
 from __future__ import annotations
 
 import copy
+import unicodedata
 
 from scheduler.data import DAYS, parse_time, tick_label
 
-DAY_ALIASES = {}
-for i, d in enumerate(DAYS):
-    DAY_ALIASES[d.lower()] = i
-FULL_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
-for i, d in enumerate(FULL_DAYS):
-    DAY_ALIASES[d] = i
+#: display names for days (the data model keeps English keys internally)
+GREEK_DAYS = ["Δευ", "Τρί", "Τετ", "Πέμ", "Παρ", "Σάβ"]
+GREEK_DAYS_FULL = ["Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"]
+FULL_DAYS_EN = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+
+
+def _fold(s: str) -> str:
+    """lowercase + strip Greek accents, for forgiving matching."""
+    s = unicodedata.normalize("NFD", str(s).strip().lower())
+    return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+
+
+DAY_ALIASES: dict[str, int] = {}
+for i in range(len(DAYS)):
+    for alias in (DAYS[i], FULL_DAYS_EN[i], GREEK_DAYS[i], GREEK_DAYS_FULL[i]):
+        DAY_ALIASES[_fold(alias)] = i
 
 
 class OpError(Exception):
@@ -41,31 +53,31 @@ def norm_day(value) -> int:
     if isinstance(value, int):
         if 0 <= value < len(DAYS):
             return value
-        raise OpError(f"Invalid day index {value} (0=Mon … 5=Sat).")
+        raise OpError(f"Μη έγκυρη ημέρα {value} (0=Δευτέρα … 5=Σάββατο).")
     if isinstance(value, str):
-        idx = DAY_ALIASES.get(value.strip().lower())
+        idx = DAY_ALIASES.get(_fold(value))
         if idx is not None:
             return idx
-    raise OpError(f"Unknown day {value!r} — use Mon…Sat.")
+    raise OpError(f"Άγνωστη ημέρα {value!r} — γράψτε π.χ. Δευτέρα ή Mon.")
 
 
 def norm_time(value) -> int:
     if isinstance(value, int):  # already a tick
         if 0 <= value <= 96:
             return value
-        raise OpError(f"Invalid time tick {value}.")
+        raise OpError(f"Μη έγκυρη ώρα {value}.")
     try:
         t = parse_time(str(value))
     except (ValueError, AttributeError):
-        raise OpError(f"Cannot parse time {value!r} — use 24h HH:MM, e.g. \"17:30\".")
+        raise OpError(f"Δεν αναγνωρίζεται η ώρα {value!r} — γράψτε 24ωρη μορφή, π.χ. \"17:30\".")
     if not (0 <= t <= 96):
-        raise OpError(f"Time {value!r} is out of range.")
+        raise OpError(f"Η ώρα {value!r} είναι εκτός ορίων.")
     return t
 
 
 def norm_days(value) -> list[int]:
     if not isinstance(value, list):
-        raise OpError("Days must be a list, e.g. [\"Mon\", \"Wed\"].")
+        raise OpError("Οι ημέρες πρέπει να είναι λίστα, π.χ. [\"Δευ\", \"Τετ\"].")
     return sorted({norm_day(d) for d in value})
 
 
@@ -78,60 +90,65 @@ def norm_window(value) -> list[int]:
     elif isinstance(value, (list, tuple)) and len(value) == 3:
         day, start, end = value
     else:
-        raise OpError(f"Bad blocked window {value!r} — use "
-                      "{\"day\": \"Tue\", \"from\": \"16:00\", \"to\": \"18:00\"}.")
+        raise OpError(f"Μη έγκυρο διάστημα μη διαθεσιμότητας {value!r} — μορφή: "
+                      "{\"day\": \"Τρί\", \"from\": \"16:00\", \"to\": \"18:00\"}.")
     d, o, c = norm_day(day), norm_time(start), norm_time(end)
     if o >= c:
-        raise OpError(f"Blocked window on {DAYS[d]}: start must be before end.")
+        raise OpError(f"Διάστημα την {GREEK_DAYS_FULL[d]}: η έναρξη πρέπει να προηγείται της λήξης.")
     return [d, o, c]
 
 
 def norm_windows(value) -> list[list[int]]:
     if not isinstance(value, list):
-        raise OpError("blocked_windows must be a list.")
+        raise OpError("Το blocked_windows πρέπει να είναι λίστα.")
     return [norm_window(w) for w in value]
 
 
 def window_label(w) -> str:
-    return f"{DAYS[w[0]]} {tick_label(w[1])}-{tick_label(w[2])}"
+    return f"{GREEK_DAYS[w[0]]} {tick_label(w[1])}-{tick_label(w[2])}"
 
 
 def days_label(days) -> str:
-    return ", ".join(DAYS[d] for d in sorted(days)) if days else "none"
+    return ", ".join(GREEK_DAYS[d] for d in sorted(days)) if days else "καμία"
 
 
 # ── entity lookup ─────────────────────────────────────────────────────────────
 
 def _find(items: list[dict], ref, kind: str, name_keys=("name",)) -> dict:
+    kinds_gr = {"teacher": "καθηγητής/τρια", "room": "αίθουσα",
+                "class": "τμήμα", "student": "μαθητής/τρια"}
+    label = kinds_gr.get(kind, kind)
     if ref is None:
-        raise OpError(f"Missing {kind} reference.")
-    ref_s = str(ref).strip().lower()
+        raise OpError(f"Λείπει η αναφορά σε {label}.")
+    ref_s = _fold(ref)
     for it in items:
-        if str(it.get("id", "")).lower() == ref_s:
+        if _fold(it.get("id", "")) == ref_s:
             return it
     matches = [it for it in items
-               if any(str(it.get(k, "")).lower() == ref_s for k in name_keys)]
+               if any(_fold(it.get(k, "")) == ref_s for k in name_keys)]
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
         ids = ", ".join(m["id"] for m in matches)
-        raise OpError(f"Ambiguous {kind} '{ref}' — matches {ids}; use the id.")
-    raise OpError(f"Unknown {kind} '{ref}'.")
+        raise OpError(f"Ασαφής αναφορά '{ref}' ({label}) — ταιριάζει με {ids}· "
+                      "χρησιμοποιήστε το id.")
+    raise OpError(f"Δεν βρέθηκε {label} '{ref}'.")
 
 
 def _find_location(school: dict, ref) -> str:
-    ref_s = str(ref).strip().lower()
+    ref_s = _fold(ref)
     for loc_id, loc_name in school["locations"].items():
-        if ref_s in (loc_id.lower(), loc_name.lower()):
+        if ref_s in (_fold(loc_id), _fold(loc_name)):
             return loc_id
-    raise OpError(f"Unknown location '{ref}'.")
+    raise OpError(f"Άγνωστο κτήριο '{ref}'.")
 
 
 def _find_level(school: dict, ref) -> str:
     for lv in school["settings"]["levels"]:
-        if lv.lower() == str(ref).strip().lower():
+        if _fold(lv) == _fold(ref):
             return lv
-    raise OpError(f"Unknown level '{ref}'. Valid: {', '.join(school['settings']['levels'])}.")
+    raise OpError(f"Άγνωστο επίπεδο '{ref}'. Έγκυρα: "
+                  f"{', '.join(school['settings']['levels'])}.")
 
 
 def next_id(items: list[dict], prefix: str) -> str:
@@ -149,7 +166,7 @@ def next_id(items: list[dict], prefix: str) -> str:
 def _op_add_teacher(school, op):
     name = op.get("name")
     if not name:
-        raise OpError("add_teacher needs a name.")
+        raise OpError("Το add_teacher χρειάζεται όνομα.")
     t = {
         "id": next_id(school["teachers"], "T"),
         "name": name,
@@ -159,72 +176,73 @@ def _op_add_teacher(school, op):
         "blocked_windows": norm_windows(op.get("blocked_windows", [])),
     }
     school["teachers"].append(t)
-    return (f"Add teacher {t['name']} ({t['id']}), home {t['home']}, "
-            f"levels: {', '.join(t['qualified_levels']) or 'none'}, "
-            f"days: {days_label(t['available_days'])}")
+    return (f"Προσθήκη καθηγητή/τριας {t['name']} ({t['id']}), έδρα {t['home']}, "
+            f"επίπεδα: {', '.join(t['qualified_levels']) or 'κανένα'}, "
+            f"ημέρες: {days_label(t['available_days'])}")
 
 
 def _op_update_teacher(school, op):
     t = _find(school["teachers"], op.get("teacher"), "teacher")
     changes = []
     if "name" in op:
-        t["name"] = str(op["name"]); changes.append(f"name → {t['name']}")
+        t["name"] = str(op["name"]); changes.append(f"όνομα → {t['name']}")
     if "home" in op:
-        t["home"] = _find_location(school, op["home"]); changes.append(f"home → {t['home']}")
+        t["home"] = _find_location(school, op["home"]); changes.append(f"έδρα → {t['home']}")
     if "qualified_levels" in op:
         t["qualified_levels"] = [_find_level(school, lv) for lv in op["qualified_levels"]]
-        changes.append(f"levels → {', '.join(t['qualified_levels']) or 'none'}")
+        changes.append(f"επίπεδα → {', '.join(t['qualified_levels']) or 'κανένα'}")
     if "available_days" in op:
         t["available_days"] = norm_days(op["available_days"])
-        changes.append(f"available days → {days_label(t['available_days'])}")
+        changes.append(f"διαθέσιμες ημέρες → {days_label(t['available_days'])}")
     if "remove_available_days" in op:
         drop = set(norm_days(op["remove_available_days"]))
         t["available_days"] = [d for d in t["available_days"] if d not in drop]
-        changes.append(f"available days → {days_label(t['available_days'])}")
+        changes.append(f"διαθέσιμες ημέρες → {days_label(t['available_days'])}")
     if "add_available_days" in op:
         add = set(norm_days(op["add_available_days"]))
         t["available_days"] = sorted(set(t["available_days"]) | add)
-        changes.append(f"available days → {days_label(t['available_days'])}")
+        changes.append(f"διαθέσιμες ημέρες → {days_label(t['available_days'])}")
     if "blocked_windows" in op:
         t["blocked_windows"] = norm_windows(op["blocked_windows"])
-        changes.append("blocked: " + (", ".join(window_label(w) for w in t["blocked_windows"]) or "none"))
+        changes.append("μη διαθέσιμος/η: "
+                       + (", ".join(window_label(w) for w in t["blocked_windows"]) or "ποτέ"))
     if "add_blocked_windows" in op:
         t["blocked_windows"] = t.get("blocked_windows", []) + norm_windows(op["add_blocked_windows"])
-        changes.append("blocked: " + ", ".join(window_label(w) for w in t["blocked_windows"]))
+        changes.append("μη διαθέσιμος/η: " + ", ".join(window_label(w) for w in t["blocked_windows"]))
     if not changes:
-        raise OpError(f"update_teacher for {t['name']}: no recognised fields.")
-    return f"Update teacher {t['name']} ({t['id']}): " + "; ".join(changes)
+        raise OpError(f"update_teacher για {t['name']}: δεν δόθηκαν αναγνωρίσιμα πεδία.")
+    return f"Ενημέρωση καθηγητή/τριας {t['name']} ({t['id']}): " + "· ".join(changes)
 
 
 def _op_remove_teacher(school, op):
     t = _find(school["teachers"], op.get("teacher"), "teacher")
     school["teachers"].remove(t)
-    return f"Remove teacher {t['name']} ({t['id']})"
+    return f"Αφαίρεση καθηγητή/τριας {t['name']} ({t['id']})"
 
 
 def _op_add_room(school, op):
     name = op.get("name")
     if not name:
-        raise OpError("add_room needs a name.")
+        raise OpError("Το add_room χρειάζεται όνομα.")
     r = {
         "id": next_id(school["rooms"], "R"),
         "location": _find_location(school, op.get("location", next(iter(school["locations"])))),
         "name": name,
     }
     school["rooms"].append(r)
-    return f"Add room {r['name']} ({r['id']}) at location {r['location']}"
+    return f"Προσθήκη αίθουσας {r['name']} ({r['id']}) στο κτήριο {r['location']}"
 
 
 def _op_remove_room(school, op):
     r = _find(school["rooms"], op.get("room"), "room")
     school["rooms"].remove(r)
-    return f"Remove room {r['name']} ({r['id']})"
+    return f"Αφαίρεση αίθουσας {r['name']} ({r['id']})"
 
 
 def _op_add_class(school, op):
     name = op.get("name")
     if not name:
-        raise OpError("add_class needs a name.")
+        raise OpError("Το add_class χρειάζεται όνομα.")
     c = {
         "id": next_id(school["classes"], "C"),
         "name": name,
@@ -236,48 +254,48 @@ def _op_add_class(school, op):
         "saturday_preferred": bool(op.get("saturday_preferred", False)),
     }
     school["classes"].append(c)
-    return (f"Add class {c['name']} ({c['id']}): level {c['level']}, "
-            f"{c['periods_per_session']} periods × {c['sessions_per_week']}/week"
-            + (f", prefers {c['preferred_location']}" if c["preferred_location"] else "")
-            + (", prefers Saturday" if c["saturday_preferred"] else ""))
+    return (f"Προσθήκη τμήματος {c['name']} ({c['id']}): επίπεδο {c['level']}, "
+            f"{c['periods_per_session']} περίοδοι × {c['sessions_per_week']}/εβδομάδα"
+            + (f", προτίμηση κτηρίου {c['preferred_location']}" if c["preferred_location"] else "")
+            + (", προτίμηση Σαββάτου" if c["saturday_preferred"] else ""))
 
 
 def _op_update_class(school, op):
     c = _find(school["classes"], op.get("class"), "class")
     changes = []
     if "name" in op:
-        c["name"] = str(op["name"]); changes.append(f"name → {c['name']}")
+        c["name"] = str(op["name"]); changes.append(f"όνομα → {c['name']}")
     if "level" in op:
-        c["level"] = _find_level(school, op["level"]); changes.append(f"level → {c['level']}")
+        c["level"] = _find_level(school, op["level"]); changes.append(f"επίπεδο → {c['level']}")
     if "periods_per_session" in op:
         c["periods_per_session"] = int(op["periods_per_session"])
-        changes.append(f"periods/session → {c['periods_per_session']}")
+        changes.append(f"περίοδοι/μάθημα → {c['periods_per_session']}")
     if "sessions_per_week" in op:
         c["sessions_per_week"] = int(op["sessions_per_week"])
-        changes.append(f"sessions/week → {c['sessions_per_week']}")
+        changes.append(f"μαθήματα/εβδομάδα → {c['sessions_per_week']}")
     if "preferred_location" in op:
         c["preferred_location"] = (_find_location(school, op["preferred_location"])
                                    if op["preferred_location"] else None)
-        changes.append(f"preferred location → {c['preferred_location'] or 'none'}")
+        changes.append(f"προτιμώμενο κτήριο → {c['preferred_location'] or 'κανένα'}")
     if "saturday_preferred" in op:
         c["saturday_preferred"] = bool(op["saturday_preferred"])
-        changes.append(f"Saturday preference → {'on' if c['saturday_preferred'] else 'off'}")
+        changes.append(f"προτίμηση Σαββάτου → {'ναι' if c['saturday_preferred'] else 'όχι'}")
     if not changes:
-        raise OpError(f"update_class for {c['name']}: no recognised fields.")
-    return f"Update class {c['name']} ({c['id']}): " + "; ".join(changes)
+        raise OpError(f"update_class για {c['name']}: δεν δόθηκαν αναγνωρίσιμα πεδία.")
+    return f"Ενημέρωση τμήματος {c['name']} ({c['id']}): " + "· ".join(changes)
 
 
 def _op_remove_class(school, op):
     c = _find(school["classes"], op.get("class"), "class")
     school["classes"].remove(c)
     school["students"] = [s for s in school["students"] if s["class_id"] != c["id"]]
-    return f"Remove class {c['name']} ({c['id']}) and its student assignments"
+    return f"Αφαίρεση τμήματος {c['name']} ({c['id']}) και των εγγραφών των μαθητών του"
 
 
 def _op_add_student(school, op):
     name = op.get("name")
     if not name:
-        raise OpError("add_student needs a name.")
+        raise OpError("Το add_student χρειάζεται όνομα.")
     cls = _find(school["classes"], op.get("class"), "class")
     s = {
         "id": next_id(school["students"], "S"),
@@ -288,11 +306,11 @@ def _op_add_student(school, op):
         "note": str(op.get("note", "")),
     }
     school["students"].append(s)
-    desc = f"Add student {s['name']} ({s['id']}) to {cls['name']}"
+    desc = f"Προσθήκη μαθητή/τριας {s['name']} ({s['id']}) στο {cls['name']}"
     if s["sibling_group"]:
-        desc += f", sibling group {s['sibling_group']}"
+        desc += f", ομάδα αδελφών {s['sibling_group']}"
     if s["blocked_windows"]:
-        desc += ", blocked: " + ", ".join(window_label(w) for w in s["blocked_windows"])
+        desc += ", μη διαθέσιμος/η: " + ", ".join(window_label(w) for w in s["blocked_windows"])
     return desc
 
 
@@ -300,30 +318,31 @@ def _op_update_student(school, op):
     s = _find(school["students"], op.get("student"), "student")
     changes = []
     if "name" in op:
-        s["name"] = str(op["name"]); changes.append(f"name → {s['name']}")
+        s["name"] = str(op["name"]); changes.append(f"όνομα → {s['name']}")
     if "class" in op:
         cls = _find(school["classes"], op["class"], "class")
-        s["class_id"] = cls["id"]; changes.append(f"class → {cls['name']}")
+        s["class_id"] = cls["id"]; changes.append(f"τμήμα → {cls['name']}")
     if "sibling_group" in op:
         s["sibling_group"] = op["sibling_group"] or None
-        changes.append(f"sibling group → {s['sibling_group'] or 'none'}")
+        changes.append(f"ομάδα αδελφών → {s['sibling_group'] or 'καμία'}")
     if "blocked_windows" in op:
         s["blocked_windows"] = norm_windows(op["blocked_windows"])
-        changes.append("blocked: " + (", ".join(window_label(w) for w in s["blocked_windows"]) or "none"))
+        changes.append("μη διαθέσιμος/η: "
+                       + (", ".join(window_label(w) for w in s["blocked_windows"]) or "ποτέ"))
     if "add_blocked_windows" in op:
         s["blocked_windows"] = s.get("blocked_windows", []) + norm_windows(op["add_blocked_windows"])
-        changes.append("blocked: " + ", ".join(window_label(w) for w in s["blocked_windows"]))
+        changes.append("μη διαθέσιμος/η: " + ", ".join(window_label(w) for w in s["blocked_windows"]))
     if "note" in op:
-        s["note"] = str(op["note"]); changes.append(f"note → {s['note']}")
+        s["note"] = str(op["note"]); changes.append(f"σημείωση → {s['note']}")
     if not changes:
-        raise OpError(f"update_student for {s['name']}: no recognised fields.")
-    return f"Update student {s['name']} ({s['id']}): " + "; ".join(changes)
+        raise OpError(f"update_student για {s['name']}: δεν δόθηκαν αναγνωρίσιμα πεδία.")
+    return f"Ενημέρωση μαθητή/τριας {s['name']} ({s['id']}): " + "· ".join(changes)
 
 
 def _op_remove_student(school, op):
     s = _find(school["students"], op.get("student"), "student")
     school["students"].remove(s)
-    return f"Remove student {s['name']} ({s['id']})"
+    return f"Αφαίρεση μαθητή/τριας {s['name']} ({s['id']})"
 
 
 def _op_set_day_hours(school, op):
@@ -333,12 +352,13 @@ def _op_set_day_hours(school, op):
     school["day_hours"].setdefault(day_name, {})
     if op.get("closed") or (op.get("open") is None and op.get("close") is None):
         school["day_hours"][day_name][loc] = None
-        return f"Close location {loc} on {day_name}"
+        return f"Κλειστό το κτήριο {loc} την {GREEK_DAYS_FULL[day]}"
     o, c = norm_time(op.get("open")), norm_time(op.get("close"))
     if o >= c:
-        raise OpError(f"set_day_hours {day_name}/{loc}: open must be before close.")
+        raise OpError(f"set_day_hours {GREEK_DAYS_FULL[day]}/{loc}: "
+                      "το άνοιγμα πρέπει να προηγείται του κλεισίματος.")
     school["day_hours"][day_name][loc] = {"open": o, "close": c}
-    return f"Set {day_name} hours at {loc} to {tick_label(o)}-{tick_label(c)}"
+    return f"Ωράριο {GREEK_DAYS_FULL[day]} στο {loc}: {tick_label(o)}-{tick_label(c)}"
 
 
 def _op_update_settings(school, op):
@@ -346,14 +366,14 @@ def _op_update_settings(school, op):
     changes = []
     if "travel_periods" in op:
         st["travel_periods"] = int(op["travel_periods"])
-        changes.append(f"travel periods → {st['travel_periods']}")
+        changes.append(f"περίοδοι μετακίνησης → {st['travel_periods']}")
     if "young_learner_cutoff" in op:
         st["young_learner_cutoff"] = norm_time(op["young_learner_cutoff"])
-        changes.append(f"young-learner cutoff → {tick_label(st['young_learner_cutoff'])}")
+        changes.append(f"όριο λήξης μικρών μαθητών → {tick_label(st['young_learner_cutoff'])}")
     if not changes:
-        raise OpError("update_settings: no recognised fields "
+        raise OpError("update_settings: δεν δόθηκαν αναγνωρίσιμα πεδία "
                       "(travel_periods, young_learner_cutoff).")
-    return "Update settings: " + "; ".join(changes)
+    return "Ενημέρωση ρυθμίσεων: " + "· ".join(changes)
 
 
 HANDLERS = {
@@ -383,21 +403,21 @@ def apply_operations(school: dict, operations: list[dict]) -> tuple[dict, list[s
     errors: list[str] = []
 
     if not isinstance(operations, list):
-        return new_school, preview, ["Operations must be a list."]
+        return new_school, preview, ["Οι λειτουργίες πρέπει να είναι λίστα."]
 
     for i, op in enumerate(operations):
         if not isinstance(op, dict) or "op" not in op:
-            errors.append(f"Operation {i + 1}: missing 'op' field.")
+            errors.append(f"Λειτουργία {i + 1}: λείπει το πεδίο 'op'.")
             continue
         handler = HANDLERS.get(op["op"])
         if handler is None:
-            errors.append(f"Operation {i + 1}: unknown op '{op['op']}'.")
+            errors.append(f"Λειτουργία {i + 1}: άγνωστη λειτουργία '{op['op']}'.")
             continue
         try:
             preview.append(handler(new_school, op))
         except OpError as e:
-            errors.append(f"Operation {i + 1} ({op['op']}): {e}")
+            errors.append(f"Λειτουργία {i + 1} ({op['op']}): {e}")
         except (KeyError, TypeError, ValueError) as e:
-            errors.append(f"Operation {i + 1} ({op['op']}): bad value ({e}).")
+            errors.append(f"Λειτουργία {i + 1} ({op['op']}): μη έγκυρη τιμή ({e}).")
 
     return new_school, preview, errors
