@@ -358,6 +358,51 @@ def solve(school: dict, time_limit_seconds: int = 120,
         if cls.get("saturday_preferred") and v["day"] != 5:
             penalties.append(5 * v["active"])
 
+    # ── S4/S5: schedule stability — prefer last year's slots & teachers ───────
+    # Classes carrying `previous_slots` (set when a workspace is seeded from
+    # the previous year, or re-attached across ERP imports by cohort) are
+    # softly pulled towards their old day+time (S4, weight 4 per session)
+    # and towards the SAME teacher at that same slot (S5, weight 2 per
+    # session) — so "Tuesday 17:30 with Ms Maria" survives the year change
+    # wherever the hard constraints still allow it.
+    W_STAB_TIME, W_STAB_TEACHER = 4, 2
+    for cls in school["classes"]:
+        c = cls["id"]
+        if c in excluded:
+            continue
+        prev = cls.get("previous_slots") or []
+        if not prev:
+            continue
+        cls_cands = [(k, v) for k, v in candidates.items() if k[0] == c]
+        if not cls_cands:
+            continue
+
+        for i, slot in enumerate(prev[:cls["sessions_per_week"]]):
+            eqs, eqs_teacher = [], []
+            for k, v in cls_cands:
+                if v["day"] != slot["day"]:
+                    continue
+                eq = model.new_bool_var(f"stab_{c}_{i}_{id(v)}")
+                model.add(v["start"] == slot["start_tick"]).only_enforce_if(eq)
+                model.add_implication(eq, v["active"])
+                eqs.append(eq)
+                if v["teacher"] == slot.get("teacher_id"):
+                    eqs_teacher.append(eq)
+
+            matched = model.new_bool_var(f"stab_match_{c}_{i}")
+            if eqs:
+                model.add_bool_or(eqs).only_enforce_if(matched)
+            else:
+                model.add(matched == 0)
+            penalties.append(W_STAB_TIME * (1 - matched))
+
+            matched_t = model.new_bool_var(f"stab_tmatch_{c}_{i}")
+            if eqs_teacher:
+                model.add_bool_or(eqs_teacher).only_enforce_if(matched_t)
+            else:
+                model.add(matched_t == 0)
+            penalties.append(W_STAB_TEACHER * (1 - matched_t))
+
     if penalties:
         model.minimize(sum(penalties))
 

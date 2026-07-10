@@ -11,6 +11,10 @@
 <header>
   <div class="brand">
     <h1>🗓 Language School Scheduler</h1>
+    <span class="ws-controls">
+      <select id="ws-select" title="Workspace (academic year)"></select>
+      <button id="ws-new" title="New workspace — e.g. next academic year, optionally mirroring this year's schedule">＋</button>
+    </span>
     <span id="ai-pill" class="pill pill-unknown" title="AI assistant status">AI: checking…</span>
   </div>
   <nav>
@@ -19,6 +23,7 @@
     <button class="tab-btn" data-tab="assistant">Assistant</button>
   </nav>
   <div class="header-actions">
+    <button id="undo-btn" disabled title="Nothing to undo">↩ Undo</button>
     <button id="solve-btn" class="primary">⚙ Solve</button>
   </div>
 </header>

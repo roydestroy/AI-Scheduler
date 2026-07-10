@@ -92,6 +92,27 @@ Any OpenAI-compatible endpoint works — configure with environment variables:
 
 ---
 
+## Workspaces, year-to-year mirroring, and undo
+
+**Workspaces** (header dropdown) are independent datasets + schedules —
+one per academic year. Create next year's with the **＋** button and choose
+*mirror*: it copies the whole configuration and keeps the current schedule
+as a **stability baseline**. When you then solve the new year, S4/S5 pull
+every class towards its old day, time and teacher, so families keep their
+familiar slots wherever the new constraints allow — and only genuinely
+conflicting classes move.
+
+The baseline follows the *students*, not the class name: after you import
+the new academic period from the ERP, each class inherits the old slot of
+the class most of its students came from — this year's EJ2 group keeps its
+Tuesday 17:30 when it becomes next year's EJ3.
+
+**Undo** (header button) reverts the last change — a manual edit, an AI
+change, an ERP import, or a re-solve. The last 30 states are kept per
+workspace.
+
+---
+
 ## Importing students from your ERP (SQL Server)
 
 If your student records live in a SQL Server (Express) database, the app can
@@ -154,6 +175,8 @@ teacher** simultaneously, optimising the whole week at once.
 | S1 | Keep each class at its preferred location | 3 / violation |
 | S2 | Avoid Friday sessions (reserved for overflow / private lessons) | 2 / session |
 | S3 | Classes flagged `saturday_preferred` should use a Saturday slot | 5 / weekday session |
+| S4 | Schedule stability: keep each class at last year's day + time | 4 / session |
+| S5 | Schedule stability: keep the same teacher at that same slot | 2 / session |
 
 The solver minimises total penalty. A score of **0** means every preference
 was satisfied as well as every hard rule.

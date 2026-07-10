@@ -31,6 +31,21 @@ header {
   position: sticky; top: 0; z-index: 20;
 }
 .brand { display: flex; align-items: center; gap: 12px; }
+.ws-controls { display: flex; align-items: center; gap: 4px; }
+.ws-controls select {
+  padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px;
+  font-size: 13.5px; background: var(--card); color: var(--ink); max-width: 170px;
+}
+.ws-controls button {
+  border: 1px dashed var(--accent); color: var(--accent); background: none;
+  border-radius: 8px; width: 28px; height: 28px; cursor: pointer; font-size: 15px;
+}
+#undo-btn {
+  border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  padding: 8px 14px; border-radius: 8px; font-size: 14.5px; cursor: pointer;
+  margin-right: 8px;
+}
+#undo-btn:disabled { opacity: .45; cursor: default; }
 h1 { font-size: 18px; margin: 0; }
 nav { display: flex; gap: 4px; }
 .header-actions { margin-left: auto; }

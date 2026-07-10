@@ -40,6 +40,53 @@ class ApplyRequest(BaseModel):
     time_limit_seconds: int = Field(default=60, ge=1, le=600)
 
 
+# ── workspaces & undo ─────────────────────────────────────────────────────────
+
+class WorkspaceCreateRequest(BaseModel):
+    name: str
+    seed_from_active: bool = False
+
+
+class WorkspaceActivateRequest(BaseModel):
+    key: str
+
+
+@app.get("/api/workspaces")
+def get_workspaces():
+    return store.list_workspaces()
+
+
+@app.post("/api/workspaces")
+def post_workspace(req: WorkspaceCreateRequest):
+    if not req.name.strip():
+        raise HTTPException(status_code=422, detail="Workspace name is required.")
+    ws = store.create_workspace(req.name.strip(), seed_from_active=req.seed_from_active)
+    return {"ok": True, "created": ws, **store.list_workspaces()}
+
+
+@app.post("/api/workspaces/activate")
+def post_workspace_activate(req: WorkspaceActivateRequest):
+    try:
+        store.activate_workspace(req.key)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"ok": True, **store.list_workspaces()}
+
+
+@app.get("/api/history")
+def get_history():
+    return {"items": store.history_list()}
+
+
+@app.post("/api/undo")
+def post_undo():
+    snap = store.undo()
+    if snap is None:
+        raise HTTPException(status_code=404, detail="Nothing to undo.")
+    return {"ok": True, "label": snap["label"],
+            "school": snap["school"], "result": snap.get("schedule")}
+
+
 # ── school data ───────────────────────────────────────────────────────────────
 
 @app.get("/api/school")
@@ -52,12 +99,14 @@ def put_school(school: dict):
     errors = store.validate_school(school)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
+    store.push_history("Manual edit of school data")
     store.save_school(school)
     return {"ok": True, "school": school}
 
 
 @app.post("/api/school/reset")
 def reset_school():
+    store.push_history("Reset to sample data")
     return {"ok": True, "school": store.reset_school()}
 
 
@@ -78,6 +127,7 @@ def post_solve(req: SolveRequest = SolveRequest()):
     errors = store.validate_school(school)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
+    store.push_history("Re-solve of the schedule")
     return _solve_and_store(school, req.time_limit_seconds)
 
 
@@ -144,6 +194,7 @@ def erp_apply(req: ErpApplyRequest):
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
 
+    store.push_history(f"ERP import from {source['name']}")
     erp.save_mapping(out["plan"]["mapping"])
     store.save_school(out["school"])
     return {"ok": True, "plan": out["plan"], "school": out["school"]}
@@ -215,6 +266,7 @@ def assistant_apply(req: ApplyRequest):
     if val_errors:
         raise HTTPException(status_code=422, detail={"errors": val_errors})
 
+    store.push_history("AI change: " + (preview[0] if preview else "assistant edit"))
     store.save_school(new_school)
     response = {"ok": True, "preview": preview, "school": new_school, "result": None}
 

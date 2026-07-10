@@ -27,6 +27,7 @@ import copy
 import hashlib
 import json
 import re
+from collections import defaultdict
 from pathlib import Path
 
 from .store import _DATA_DIR  # same data directory as school.json
@@ -249,6 +250,7 @@ def build_plan(school: dict, source: dict, rows: list[dict], mapping: dict) -> d
         "new_classes": [], "removed_classes": [],
         "new_students": [], "updated_students": [], "removed_students": [],
         "skipped": {c: counts[c] for c in codes if not mapping[c]["import"]},
+        "baseline_carried": [],
         "warnings": [],
     }
 
@@ -346,6 +348,51 @@ def build_plan(school: dict, source: dict, rows: list[dict], mapping: dict) -> d
         if s.get("erp_source") == key and s["id"] not in seen_ids:
             plan["removed_students"].append(s["name"])
             new_school["students"].remove(s)
+
+    # ── carry schedule baselines with the COHORT, not the class id ────────────
+    # When a workspace was seeded from last year, classes hold `previous_slots`
+    # (their old day/time/teacher). After importing the new period, the kids
+    # of last year's EJ2 are now in class fil-EJ3 — so fil-EJ3 must inherit
+    # EJ2's old slot, not keep the slot of last year's (different) EJ3 group.
+    # We match each imported class to the old class most of its students came
+    # from, and move the baseline accordingly.
+    def _base(sid: str) -> str:
+        return re.sub(r"-\d+$", "", sid)
+
+    old_members: dict[str, set] = defaultdict(set)
+    for s in school["students"]:
+        if s.get("erp_source") == key:
+            old_members[s["class_id"]].add(_base(s["id"]))
+    old_classes = {c["id"]: c for c in school["classes"]}
+    old_slots = {cid: c.get("previous_slots") for cid, c in old_classes.items()}
+
+    if any(old_slots.values()):
+        new_members: dict[str, set] = defaultdict(set)
+        for s in new_school["students"]:
+            if s.get("erp_source") == key:
+                new_members[s["class_id"]].add(_base(s["id"]))
+
+        for c in new_school["classes"]:
+            if c.get("erp_source") != key:
+                continue
+            members = new_members.get(c["id"], set())
+            if not members:
+                continue
+            donor, overlap = None, 0
+            for old_id, old_set in old_members.items():
+                n = len(members & old_set)
+                if n > overlap:
+                    donor, overlap = old_id, n
+            if donor and overlap * 2 >= len(members):
+                slots = old_slots.get(donor)
+                if slots:
+                    if donor != c["id"]:
+                        plan["baseline_carried"].append(
+                            f"{c['name']} keeps the old time slot of "
+                            f"{old_classes[donor]['name']} (same students, one level up)")
+                    c["previous_slots"] = copy.deepcopy(slots)
+                else:
+                    c.pop("previous_slots", None)
 
     plan["mapping"] = mapping
     return {"plan": plan, "school": new_school}

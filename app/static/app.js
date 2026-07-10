@@ -168,6 +168,7 @@ $("#solve-btn").addEventListener("click", async () => {
     const result = await api("/api/solve", { method: "POST", body: JSON.stringify({}) });
     renderSchedule(result);
     switchTab("schedule");
+    updateUndo();
   } catch (e) {
     alert("Solve failed:\n" + e.message);
   } finally {
@@ -408,6 +409,7 @@ $("#save-btn").addEventListener("click", async () => {
   try {
     await api("/api/school", { method: "PUT", body: JSON.stringify(school) });
     setDirty(false);
+    updateUndo();
   } catch (e) {
     errBox.textContent = "Cannot save:\n" + e.message;
     errBox.classList.remove("hidden");
@@ -420,8 +422,76 @@ $("#reset-btn").addEventListener("click", async () => {
   school = body.school;
   setDirty(false);
   renderData();
+  updateUndo();
   $("#schedule-grids").innerHTML = `<p class="empty-note">Data was reset — press <b>Solve</b> to generate a new timetable.</p>`;
   $("#solve-status").classList.add("hidden");
+});
+
+/* ── workspaces & undo ─────────────────────────────────────────── */
+
+async function renderWorkspaces() {
+  const body = await api("/api/workspaces");
+  const sel = $("#ws-select");
+  sel.innerHTML = body.workspaces.map((w) =>
+    `<option value="${esc(w.key)}" ${w.key === body.active ? "selected" : ""}>${esc(w.name)}</option>`).join("");
+}
+
+$("#ws-select").addEventListener("change", async () => {
+  await api("/api/workspaces/activate", {
+    method: "POST", body: JSON.stringify({ key: $("#ws-select").value }),
+  });
+  location.reload();   // simplest way to fully re-sync every tab
+});
+
+$("#ws-new").addEventListener("click", async () => {
+  const name = prompt("Name for the new workspace (e.g. 2026-2027):");
+  if (!name || !name.trim()) return;
+  const seed = confirm(
+    "Mirror the current workspace into it?\n\n" +
+    "OK  = copy teachers, rooms, hours and classes, and keep the current " +
+    "schedule as the stable baseline (recommended for the next school year — " +
+    "the solver will try to keep everyone's time slots and teachers).\n\n" +
+    "Cancel = start from the blank sample data.");
+  await api("/api/workspaces", {
+    method: "POST", body: JSON.stringify({ name: name.trim(), seed_from_active: seed }),
+  });
+  location.reload();
+});
+
+async function updateUndo() {
+  try {
+    const body = await api("/api/history");
+    const btn = $("#undo-btn");
+    if (body.items.length) {
+      btn.disabled = false;
+      btn.title = `Undo: ${body.items[0].label}`;
+    } else {
+      btn.disabled = true;
+      btn.title = "Nothing to undo";
+    }
+  } catch { /* non-fatal */ }
+}
+
+$("#undo-btn").addEventListener("click", async () => {
+  const btn = $("#undo-btn");
+  btn.disabled = true;
+  try {
+    const body = await api("/api/undo", { method: "POST" });
+    school = body.school;
+    setDirty(false);
+    renderData();
+    if (body.result && body.result.schedule && body.result.schedule.length) {
+      renderSchedule(body.result);
+    } else {
+      $("#schedule-grids").innerHTML =
+        `<p class="empty-note">Undone: ${esc(body.label)} — press <b>Solve</b> to regenerate the timetable.</p>`;
+      $("#solve-status").classList.add("hidden");
+    }
+  } catch (e) {
+    alert("Undo failed: " + e.message);
+  } finally {
+    updateUndo();
+  }
 });
 
 /* ── ERP import ────────────────────────────────────────────────── */
@@ -515,6 +585,7 @@ function renderErpPlan(plan) {
     ["New classes", plan.new_classes], ["New students", plan.new_students],
     ["Level changes", plan.updated_students], ["Removed students", plan.removed_students],
     ["Removed classes", plan.removed_classes],
+    ["Schedule baseline follows the students", plan.baseline_carried || []],
   ];
   for (const [title, arr] of sections) {
     if (arr.length) html += `<p><b>${title} (${arr.length}):</b></p><ul>${li(arr)}</ul>`;
@@ -552,6 +623,7 @@ function renderErpPlan(plan) {
       school = body.school;
       setDirty(false);
       renderData();
+      updateUndo();
       $("#erp-preview").innerHTML = `<div class="status-bar status-OPTIMAL"><span class="big">Imported ✓</span>
         <span>${body.plan.new_students.length} new, ${body.plan.updated_students.length} changed,
         ${body.plan.removed_students.length} removed students — press Solve to reschedule.</span></div>`;
@@ -628,6 +700,7 @@ function addProposal(operations, preview, errors) {
       school = body.school;
       renderData();
       setDirty(false);
+      updateUndo();
       card.classList.add("done");
       card.querySelector(".actions").remove();
       if (body.result) {
@@ -683,4 +756,6 @@ $("#chat-form").addEventListener("submit", async (ev) => {
   if (last && last.schedule && last.schedule.length) renderSchedule(last);
   checkAI();
   renderErpSources();
+  renderWorkspaces();
+  updateUndo();
 })();

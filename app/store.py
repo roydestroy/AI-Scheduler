@@ -1,71 +1,245 @@
 """
-JSON persistence + validation for the school configuration.
+Persistence: workspaces, school data, schedules, and undo history.
 
-The school lives in a single JSON file (default: data/school.json,
-override with the SCHOOL_DATA_DIR env var). On first run it is seeded
-from the sample dataset in scheduler.data.default_school().
+Workspaces
+----------
+Each workspace is an independent school dataset + solved schedule —
+typically one per academic year ("2025-2026", "2026-2027"). One is
+active at a time; all API operations act on the active workspace.
+A new workspace can be seeded from the current one, carrying the solved
+schedule along as a *stability baseline* (each class remembers its old
+day/time/teacher as `previous_slots`, which the solver treats as a soft
+preference — "keep last year's schedule where possible").
+
+Undo
+----
+Before every mutation the previous state (school + schedule) is pushed
+onto a per-workspace history stack (last 30 snapshots). POST /api/undo
+restores the most recent snapshot.
+
+Layout on disk (SCHOOL_DATA_DIR, default ./data):
+    workspaces.json                  registry {active, workspaces: [...]}
+    workspaces/<key>/school.json
+    workspaces/<key>/last_schedule.json
+    workspaces/<key>/history/<ms>.json
+    erp_sources.json / erp_mapping.json   (shared across workspaces)
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import os
+import re
 import threading
+import time
+from collections import defaultdict
 from pathlib import Path
 
 from scheduler.data import DAYS, default_school
 
 _DATA_DIR = Path(os.environ.get("SCHOOL_DATA_DIR", "data"))
-_SCHOOL_FILE = _DATA_DIR / "school.json"
-_SCHEDULE_FILE = _DATA_DIR / "last_schedule.json"
+_WORKSPACES_DIR = _DATA_DIR / "workspaces"
+_REGISTRY_FILE = _DATA_DIR / "workspaces.json"
 
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 MAX_TICK = 24 * 4  # 96 ticks in a day
+HISTORY_LIMIT = 30
 
 
-# ── load / save ───────────────────────────────────────────────────────────────
-
-def load_school() -> dict:
-    with _lock:
-        if not _SCHOOL_FILE.exists():
-            school = default_school()
-            _write(_SCHOOL_FILE, school)
-            return school
-        return json.loads(_SCHOOL_FILE.read_text(encoding="utf-8"))
-
-
-def save_school(school: dict) -> None:
-    with _lock:
-        _write(_SCHOOL_FILE, school)
-
-
-def load_last_schedule() -> dict | None:
-    with _lock:
-        if not _SCHEDULE_FILE.exists():
-            return None
-        return json.loads(_SCHEDULE_FILE.read_text(encoding="utf-8"))
-
-
-def save_last_schedule(result: dict) -> None:
-    with _lock:
-        _write(_SCHEDULE_FILE, result)
-
-
-def reset_school() -> dict:
-    school = default_school()
-    save_school(school)
-    with _lock:
-        if _SCHEDULE_FILE.exists():
-            _SCHEDULE_FILE.unlink()
-    return school
-
-
-def _write(path: Path, obj: dict) -> None:
+def _write(path: Path, obj) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
+
+
+def _read(path: Path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+# ── workspace registry ────────────────────────────────────────────────────────
+
+def _registry() -> dict:
+    with _lock:
+        if _REGISTRY_FILE.exists():
+            return _read(_REGISTRY_FILE)
+        # first run (or upgrade from the pre-workspace layout)
+        reg = {"active": "default",
+               "workspaces": [{"key": "default", "name": "My school"}]}
+        ws_dir = _WORKSPACES_DIR / "default"
+        ws_dir.mkdir(parents=True, exist_ok=True)
+        for fname in ("school.json", "last_schedule.json"):
+            legacy = _DATA_DIR / fname
+            if legacy.exists() and not (ws_dir / fname).exists():
+                legacy.replace(ws_dir / fname)
+        _write(_REGISTRY_FILE, reg)
+        return reg
+
+
+def list_workspaces() -> dict:
+    reg = _registry()
+    return {"active": reg["active"], "workspaces": reg["workspaces"]}
+
+
+def _slugify(name: str) -> str:
+    s = re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-").lower()
+    return s or "workspace"
+
+
+def activate_workspace(key: str) -> None:
+    with _lock:
+        reg = _registry()
+        if not any(w["key"] == key for w in reg["workspaces"]):
+            raise KeyError(f"Unknown workspace '{key}'.")
+        reg["active"] = key
+        _write(_REGISTRY_FILE, reg)
+
+
+def create_workspace(name: str, seed_from_active: bool = False) -> dict:
+    """Create (and activate) a new workspace. With seed_from_active the new
+    workspace copies the active one's full configuration and roster, and the
+    active workspace's solved schedule becomes the stability baseline."""
+    with _lock:
+        reg = _registry()
+        base = _slugify(name)
+        key, n = base, 2
+        while any(w["key"] == key for w in reg["workspaces"]):
+            key, n = f"{base}-{n}", n + 1
+
+        if seed_from_active:
+            school = copy.deepcopy(load_school())
+            schedule = load_last_schedule()
+            if schedule and schedule.get("schedule"):
+                attach_baseline(school, schedule)
+        else:
+            school = default_school()
+
+        ws_dir = _WORKSPACES_DIR / key
+        ws_dir.mkdir(parents=True, exist_ok=True)
+        _write(ws_dir / "school.json", school)
+
+        reg["workspaces"].append({"key": key, "name": name})
+        reg["active"] = key
+        _write(_REGISTRY_FILE, reg)
+        return {"key": key, "name": name}
+
+
+def attach_baseline(school: dict, schedule: dict) -> None:
+    """Record each class's solved slots as `previous_slots` so the solver
+    can prefer keeping them (schedule stability across years)."""
+    by_class = defaultdict(list)
+    for e in schedule.get("schedule", []):
+        by_class[e["class_id"]].append({
+            "day": e["day_idx"],
+            "start_tick": e["start_tick"],
+            "room_id": e["room_id"],
+            "teacher_id": e["teacher_id"],
+        })
+    for c in school["classes"]:
+        slots = sorted(by_class.get(c["id"], []), key=lambda s: (s["day"], s["start_tick"]))
+        if slots:
+            c["previous_slots"] = slots
+        else:
+            c.pop("previous_slots", None)
+
+
+# ── active-workspace file access ──────────────────────────────────────────────
+
+def _ws_dir() -> Path:
+    reg = _registry()
+    return _WORKSPACES_DIR / reg["active"]
+
+
+def load_school() -> dict:
+    with _lock:
+        f = _ws_dir() / "school.json"
+        if not f.exists():
+            school = default_school()
+            _write(f, school)
+            return school
+        return _read(f)
+
+
+def save_school(school: dict) -> None:
+    with _lock:
+        _write(_ws_dir() / "school.json", school)
+
+
+def load_last_schedule() -> dict | None:
+    with _lock:
+        f = _ws_dir() / "last_schedule.json"
+        return _read(f) if f.exists() else None
+
+
+def save_last_schedule(result: dict) -> None:
+    with _lock:
+        _write(_ws_dir() / "last_schedule.json", result)
+
+
+def reset_school() -> dict:
+    with _lock:
+        school = default_school()
+        save_school(school)
+        f = _ws_dir() / "last_schedule.json"
+        if f.exists():
+            f.unlink()
+        return school
+
+
+# ── undo history ──────────────────────────────────────────────────────────────
+
+def _history_dir() -> Path:
+    return _ws_dir() / "history"
+
+def _history_files() -> list[Path]:
+    d = _history_dir()
+    return sorted(d.glob("*.json")) if d.exists() else []
+
+
+def push_history(label: str) -> None:
+    """Snapshot the current state BEFORE a mutation, so it can be undone."""
+    with _lock:
+        snap = {
+            "ts": time.time(),
+            "label": label,
+            "school": load_school(),
+            "schedule": load_last_schedule(),
+        }
+        _write(_history_dir() / f"{int(snap['ts'] * 1000)}.json", snap)
+        files = _history_files()
+        for f in files[:-HISTORY_LIMIT]:
+            f.unlink()
+
+
+def history_list() -> list[dict]:
+    out = []
+    for f in reversed(_history_files()):
+        try:
+            snap = _read(f)
+            out.append({"label": snap.get("label", "change"), "ts": snap.get("ts")})
+        except (json.JSONDecodeError, OSError):
+            continue
+    return out
+
+
+def undo() -> dict | None:
+    """Restore the most recent snapshot. Returns {label, school, schedule}
+    or None if there is nothing to undo."""
+    with _lock:
+        files = _history_files()
+        if not files:
+            return None
+        snap = _read(files[-1])
+        save_school(snap["school"])
+        sched_file = _ws_dir() / "last_schedule.json"
+        if snap.get("schedule") is not None:
+            _write(sched_file, snap["schedule"])
+        elif sched_file.exists():
+            sched_file.unlink()
+        files[-1].unlink()
+        return snap
 
 
 # ── validation ────────────────────────────────────────────────────────────────
