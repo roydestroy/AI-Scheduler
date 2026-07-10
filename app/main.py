@@ -10,10 +10,13 @@ Then open http://localhost:8000
 from __future__ import annotations
 
 import copy
+import hashlib
+import hmac
+import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -21,7 +24,80 @@ from scheduler.diagnose import diagnose
 from scheduler.solver import solve
 from . import assistant, diff, erp, export, operations, store
 
-app = FastAPI(title="Language School Scheduler", version="0.3")
+app = FastAPI(title="Language School Scheduler", version="0.4")
+
+
+# ── optional shared password (multi-PC / network deployments) ─────────────────
+# Set APP_PASSWORD to require a login; leave unset for single-PC use.
+# Transport security comes from the LAN/Tailscale, this keeps casual
+# visitors (students on the school wifi…) out of the schedule data.
+
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+_AUTH_COOKIE = "scheduler_auth"
+
+
+def _auth_token() -> str:
+    return hmac.new(APP_PASSWORD.encode(), b"scheduler-auth-v1", hashlib.sha256).hexdigest()
+
+
+@app.middleware("http")
+async def _auth_middleware(request: Request, call_next):
+    if not APP_PASSWORD or request.url.path in ("/login", "/logout"):
+        return await call_next(request)
+    if hmac.compare_digest(request.cookies.get(_AUTH_COOKIE, ""), _auth_token()):
+        return await call_next(request)
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": "Authentication required — reload the page to log in."},
+                            status_code=401)
+    return RedirectResponse("/login", status_code=303)
+
+
+_LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scheduler — login</title>
+<style>
+ body {{ font: 16px system-ui; background: #f5f6f8; display: flex;
+        align-items: center; justify-content: center; min-height: 100vh; margin: 0; }}
+ form {{ background: #fff; border: 1px solid #e3e6eb; border-radius: 14px;
+        padding: 32px 36px; display: flex; flex-direction: column; gap: 14px; width: 300px; }}
+ h1 {{ font-size: 18px; margin: 0; }}
+ input {{ padding: 10px 12px; border: 1px solid #e3e6eb; border-radius: 8px; font-size: 15px; }}
+ button {{ background: #2563eb; color: #fff; border: none; padding: 10px;
+          border-radius: 8px; font-size: 15px; cursor: pointer; }}
+ .err {{ color: #dc2626; font-size: 14px; margin: 0; }}
+</style></head><body>
+<form method="post" action="/login">
+  <h1>🗓 Language School Scheduler</h1>
+  {error}
+  <input type="password" name="password" placeholder="Password" autofocus>
+  <button type="submit">Log in</button>
+</form></body></html>"""
+
+
+@app.get("/login")
+def login_page(e: int = 0):
+    err = '<p class="err">Wrong password — try again.</p>' if e else ""
+    return HTMLResponse(_LOGIN_PAGE.format(error=err))
+
+
+@app.post("/login")
+async def login_submit(request: Request):
+    # parse the urlencoded body directly — avoids the python-multipart dependency
+    from urllib.parse import parse_qs
+    form = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
+    if APP_PASSWORD and hmac.compare_digest(str(form.get("password", "")), APP_PASSWORD):
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie(_AUTH_COOKIE, _auth_token(), max_age=90 * 24 * 3600,
+                        httponly=True, samesite="lax")
+        return resp
+    return RedirectResponse("/login?e=1", status_code=303)
+
+
+@app.get("/logout")
+def logout():
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie(_AUTH_COOKIE)
+    return resp
 
 
 # ── request models ────────────────────────────────────────────────────────────
@@ -84,31 +160,46 @@ def post_undo():
     snap = store.undo()
     if snap is None:
         raise HTTPException(status_code=404, detail="Nothing to undo.")
-    return {"ok": True, "label": snap["label"],
-            "school": snap["school"], "result": snap.get("schedule")}
+    return {"ok": True, "label": snap["label"], "school": snap["school"],
+            "result": snap.get("schedule"), "rev": store.school_rev()}
 
 
 # ── school data ───────────────────────────────────────────────────────────────
 
+class SchoolUpdate(BaseModel):
+    school: dict
+    base_rev: str | None = None
+
+
 @app.get("/api/school")
 def get_school():
-    return store.load_school()
+    return {"school": store.load_school(), "rev": store.school_rev()}
+
+
+@app.get("/api/rev")
+def get_rev():
+    return {"school_rev": store.school_rev(), "schedule_rev": store.schedule_rev()}
 
 
 @app.put("/api/school")
-def put_school(school: dict):
-    errors = store.validate_school(school)
+def put_school(req: SchoolUpdate):
+    if req.base_rev and req.base_rev != store.school_rev():
+        raise HTTPException(
+            status_code=409,
+            detail="Someone else changed the school data while you were editing. "
+                   "Reload to get the latest version (your unsaved edits will be lost).")
+    errors = store.validate_school(req.school)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
     store.push_history("Manual edit of school data")
-    store.save_school(school)
-    return {"ok": True, "school": school}
+    store.save_school(req.school)
+    return {"ok": True, "school": req.school, "rev": store.school_rev()}
 
 
 @app.post("/api/school/reset")
 def reset_school():
     store.push_history("Reset to sample data")
-    return {"ok": True, "school": store.reset_school()}
+    return {"ok": True, "school": store.reset_school(), "rev": store.school_rev()}
 
 
 # ── solving ───────────────────────────────────────────────────────────────────
@@ -206,7 +297,8 @@ def erp_apply(req: ErpApplyRequest):
     store.push_history(f"ERP import from {source['name']}")
     erp.save_mapping(out["plan"]["mapping"])
     store.save_school(out["school"])
-    return {"ok": True, "plan": out["plan"], "school": out["school"]}
+    return {"ok": True, "plan": out["plan"], "school": out["school"],
+            "rev": store.school_rev()}
 
 
 # ── exports ───────────────────────────────────────────────────────────────────
@@ -277,7 +369,8 @@ def assistant_apply(req: ApplyRequest):
 
     store.push_history("AI change: " + (preview[0] if preview else "assistant edit"))
     store.save_school(new_school)
-    response = {"ok": True, "preview": preview, "school": new_school, "result": None}
+    response = {"ok": True, "preview": preview, "school": new_school,
+                "result": None, "rev": store.school_rev()}
 
     if req.resolve:
         response["result"] = _solve_and_store(new_school, req.time_limit_seconds)

@@ -92,6 +92,34 @@ Any OpenAI-compatible endpoint works — configure with environment variables:
 
 ---
 
+## Running it for the whole school (multiple PCs / branches)
+
+The app is a web server — install it on **one** always-on PC and every other
+computer just opens a browser. Nothing to install on the other machines.
+
+1. On the host PC, start it listening on the network — double-click
+   **`start_scheduler.bat`** (Windows), or run
+   `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
+2. Allow the port through the host's firewall (once, as administrator):
+   `netsh advfirewall firewall add rule name="School Scheduler" dir=in action=allow protocol=TCP localport=8000`
+3. Other PCs browse to `http://<host-ip>:8000`. Branches connected via
+   [Tailscale](https://tailscale.com) use the host's Tailscale IP
+   (`tailscale ip -4` on the host).
+4. **Set a password** as soon as other PCs connect: set the `APP_PASSWORD`
+   environment variable (see `start_scheduler.bat`) — everyone then logs in
+   once per browser; without it anyone on the network can edit the schedule.
+
+Working together is safe by design:
+
+- **Conflict guard** — if two people edit the school data at the same time,
+  the second save is rejected with a clear "someone else changed the data,
+  reload" message instead of silently overwriting the first.
+- **Auto-sync** — every open browser picks up changes made elsewhere within
+  ~20 seconds: new data, new solves, ERP imports. The front desk at branch B
+  sees the re-solved schedule without touching anything.
+
+---
+
 ## Workspaces, year-to-year mirroring, and undo
 
 **Workspaces** (header dropdown) are independent datasets + schedules —

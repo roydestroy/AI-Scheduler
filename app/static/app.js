@@ -5,6 +5,8 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const $ = (sel) => document.querySelector(sel);
 
 let school = null;          // current school dict (mirrors server)
+let schoolRev = null;       // server revision of `school` (conflict detection)
+let scheduleRev = null;     // server revision of the last solved schedule
 let dirty = false;
 let chatHistory = [];       // [{role, content}] for assistant context
 
@@ -41,13 +43,16 @@ async function api(path, opts = {}) {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
+  if (resp.status === 401) { location.reload(); throw new Error("Logged out."); }
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const detail = body.detail;
     const msg = typeof detail === "string" ? detail
       : detail && detail.errors ? detail.errors.join("\n")
       : `Request failed (${resp.status})`;
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = resp.status;
+    throw err;
   }
   return body;
 }
@@ -199,14 +204,17 @@ $("#solve-btn").addEventListener("click", async () => {
   if (dirty && !confirm("You have unsaved data changes — solve with the last saved data anyway?")) return;
   btn.disabled = true;
   btn.innerHTML = `<span class="spinner">⚙</span> Solving…`;
+  syncSolving = true;
   try {
     const result = await api("/api/solve", { method: "POST", body: JSON.stringify({}) });
     renderSchedule(result);
     switchTab("schedule");
     updateUndo();
+    try { scheduleRev = (await api("/api/rev")).schedule_rev; } catch {}
   } catch (e) {
     alert("Solve failed:\n" + e.message);
   } finally {
+    syncSolving = false;
     btn.disabled = false;
     btn.innerHTML = "⚙ Solve";
   }
@@ -442,11 +450,20 @@ $("#save-btn").addEventListener("click", async () => {
   const errBox = $("#data-errors");
   errBox.classList.add("hidden");
   try {
-    await api("/api/school", { method: "PUT", body: JSON.stringify(school) });
+    const body = await api("/api/school", {
+      method: "PUT",
+      body: JSON.stringify({ school, base_rev: schoolRev }),
+    });
+    schoolRev = body.rev;
     setDirty(false);
     updateUndo();
   } catch (e) {
-    errBox.textContent = "Cannot save:\n" + e.message;
+    if (e.status === 409) {
+      errBox.innerHTML = `⚠ ${esc(e.message)}<br>
+        <button class="add-btn" onclick="location.reload()">↻ Reload now</button>`;
+    } else {
+      errBox.textContent = "Cannot save:\n" + e.message;
+    }
     errBox.classList.remove("hidden");
   }
 });
@@ -455,6 +472,7 @@ $("#reset-btn").addEventListener("click", async () => {
   if (!confirm("Discard ALL data and restore the sample school?")) return;
   const body = await api("/api/school/reset", { method: "POST" });
   school = body.school;
+  schoolRev = body.rev;
   setDirty(false);
   renderData();
   updateUndo();
@@ -513,6 +531,7 @@ $("#undo-btn").addEventListener("click", async () => {
   try {
     const body = await api("/api/undo", { method: "POST" });
     school = body.school;
+    schoolRev = body.rev;
     setDirty(false);
     renderData();
     if (body.result && body.result.schedule && body.result.schedule.length) {
@@ -656,6 +675,7 @@ function renderErpPlan(plan) {
                                academic_period_id: plan.academic_period_id || null }),
       });
       school = body.school;
+      schoolRev = body.rev;
       setDirty(false);
       renderData();
       updateUndo();
@@ -733,6 +753,7 @@ function addProposal(operations, preview, errors) {
         body: JSON.stringify({ operations, resolve: act === "apply-solve" }),
       });
       school = body.school;
+      schoolRev = body.rev;
       renderData();
       setDirty(false);
       updateUndo();
@@ -740,6 +761,7 @@ function addProposal(operations, preview, errors) {
       card.querySelector(".actions").remove();
       if (body.result) {
         renderSchedule(body.result);
+        try { scheduleRev = (await api("/api/rev")).schedule_rev; } catch {}
         addMsg("system", `Applied ✓ — re-solved: ${esc(body.result.status)}${
           body.result.objective !== null ? `, penalty ${body.result.objective}` : ""}. See the Schedule tab.`);
       } else {
@@ -784,13 +806,48 @@ $("#chat-form").addEventListener("submit", async (ev) => {
 
 /* ── init ──────────────────────────────────────────────────────── */
 
+/* ── multi-user sync: pick up other PCs' changes automatically ──── */
+
+let syncSolving = false;   // solve in flight on THIS client
+
+async function syncPoll() {
+  try {
+    const rev = await api("/api/rev");
+    if (rev.school_rev !== schoolRev) {
+      if (dirty) {
+        const errBox = $("#data-errors");
+        errBox.innerHTML = `⚠ Someone else changed the school data on another computer. ` +
+          `Saving will be rejected — <button class="add-btn" onclick="location.reload()">↻ reload to sync</button> ` +
+          `(your unsaved edits will be lost).`;
+        errBox.classList.remove("hidden");
+      } else {
+        const body = await api("/api/school");
+        school = body.school;
+        schoolRev = body.rev;
+        renderData();
+        updateUndo();
+      }
+    }
+    if (rev.schedule_rev !== scheduleRev && !syncSolving) {
+      scheduleRev = rev.schedule_rev;
+      const last = await api("/api/schedule");
+      if (last && last.schedule) renderSchedule(last);
+    }
+  } catch { /* offline / logged out — the next action will surface it */ }
+}
+
 (async function init() {
-  school = await api("/api/school");
+  const body = await api("/api/school");
+  school = body.school;
+  schoolRev = body.rev;
   renderData();
+  const rev = await api("/api/rev");
+  scheduleRev = rev.schedule_rev;
   const last = await api("/api/schedule");
   if (last && last.schedule && last.schedule.length) renderSchedule(last);
   checkAI();
   renderErpSources();
   renderWorkspaces();
   updateUndo();
+  setInterval(syncPoll, 20000);
 })();

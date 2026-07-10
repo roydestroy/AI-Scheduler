@@ -28,6 +28,7 @@ Layout on disk (SCHOOL_DATA_DIR, default ./data):
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
@@ -187,6 +188,23 @@ def reset_school() -> dict:
         if f.exists():
             f.unlink()
         return school
+
+
+# ── revisions (multi-user conflict detection) ────────────────────────────────
+
+def _rev_of(obj) -> str:
+    return hashlib.sha1(
+        json.dumps(obj, sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()[:12]
+
+
+def school_rev() -> str:
+    return _rev_of(load_school())
+
+
+def schedule_rev() -> str:
+    sched = load_last_schedule()
+    return _rev_of(sched) if sched is not None else "none"
 
 
 # ── undo history ──────────────────────────────────────────────────────────────

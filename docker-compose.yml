@@ -16,6 +16,8 @@ services:
     environment:
       LLM_BASE_URL: http://ollama:11434/v1
       LLM_MODEL: qwen2.5:3b
+      # optional login for multi-PC use: export APP_PASSWORD before `up`
+      APP_PASSWORD: ${APP_PASSWORD:-}
     volumes:
       - school-data:/data
     depends_on:
