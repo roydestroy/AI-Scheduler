@@ -99,6 +99,27 @@ code { background: var(--line); padding: 1px 5px; border-radius: 4px; font-size:
 .export-links a { color: var(--accent); text-decoration: none; font-size: 14px; }
 .export-links a:hover { text-decoration: underline; }
 
+/* ── change tracking ────────────────────────────────────────────── */
+.changes-panel { width: 100%; border: none; padding: 0; margin: 0; background: none; }
+.changes-panel summary { font-size: 13.5px; font-weight: 500; padding: 4px 0; }
+.changes-panel ul { margin: 4px 0 2px; padding-left: 24px; font-size: 13.5px; }
+.changes-panel li { margin: 2px 0; }
+.chg-chip {
+  font-size: 12.5px; padding: 2px 9px; border-radius: 999px;
+  background: #fef3c7; color: #92400e; white-space: nowrap;
+}
+.chg-chip.chg-added   { background: #dcfce7; color: #166534; }
+.chg-chip.chg-removed { background: #fee2e2; color: #991b1b; }
+.chg-chip.chg-none    { background: #dcfce7; color: #166534; }
+li.chg-removed { color: var(--bad); }
+li.chg-added   { color: var(--ok); }
+
+.session.changed { outline: 2px dashed var(--warn); outline-offset: -2px; }
+.chg-dot {
+  position: absolute; top: 2px; right: 5px; color: var(--warn);
+  font-size: 11px; cursor: help;
+}
+
 .day-card {
   background: var(--card); border: 1px solid var(--line); border-radius: 12px;
   padding: 14px 16px 18px; margin-bottom: 18px; overflow-x: auto;

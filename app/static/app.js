@@ -71,6 +71,11 @@ function switchTab(name) {
 
 /* ── schedule rendering ────────────────────────────────────────── */
 
+const CHANGE_LABELS = {
+  moved: ["🔀", "moved"], teacher: ["👤", "teacher changes"], room: ["🚪", "room changes"],
+  added: ["＋", "new"], removed: ["－", "removed"],
+};
+
 function renderStatus(result) {
   const bar = $("#solve-status");
   bar.classList.remove("hidden");
@@ -82,12 +87,39 @@ function renderStatus(result) {
     ? `<span class="export-links"><a href="/api/export/pdf">⬇ PDF</a>
        <a href="/api/export/ics" title="Import into Google Calendar / Outlook / Apple Calendar">⬇ Calendar (.ics)</a></span>`
     : "";
+
+  // "what changed" summary + collapsible detail list
+  let changesHtml = "";
+  const ch = result.changes;
+  if (ch && ch.items.length) {
+    const chips = Object.entries(ch.summary)
+      .filter(([t, n]) => n && t !== "unchanged")
+      .map(([t, n]) => `<span class="chg-chip chg-${t}">${CHANGE_LABELS[t][0]} ${n} ${CHANGE_LABELS[t][1]}</span>`)
+      .join(" ");
+    changesHtml = `<details class="changes-panel" open>
+      <summary>${ch.summary.unchanged} unchanged · ${chips}</summary>
+      <ul>${ch.items.map((i) =>
+        `<li class="chg-${i.type}">${CHANGE_LABELS[i.type][0]} ${esc(i.text)}</li>`).join("")}</ul>
+    </details>`;
+  } else if (ch && !ch.items.length) {
+    changesHtml = `<span class="chg-chip chg-none">✓ identical to the previous schedule</span>`;
+  }
+
   bar.innerHTML = `<span class="big">${esc(result.status || "—")}</span>
-    <span>${(result.schedule || []).length} sessions</span> ${pen} ${exports} ${warns}`;
+    <span>${(result.schedule || []).length} sessions</span> ${pen} ${exports} ${changesHtml} ${warns}`;
+}
+
+function changedKeyMap(result) {
+  const map = {};
+  for (const i of (result.changes && result.changes.items) || []) {
+    for (const k of i.keys || []) map[k] = i.text;
+  }
+  return map;
 }
 
 function renderSchedule(result) {
   renderStatus(result);
+  const changed = changedKeyMap(result);
   const host = $("#schedule-grids");
   host.innerHTML = "";
   const sched = result.schedule || [];
@@ -144,12 +176,15 @@ function renderSchedule(result) {
     for (const e of entries) {
       const col = rooms.findIndex((r) => r.id === e.room_id) + 2;
       const locCls = `loc-${locIds.indexOf(e.location)}`;
+      const chgText = changed[`${e.class_id}|${e.day_idx}|${e.start_tick}`];
       const div = document.createElement("div");
-      div.className = `session ${locCls}`;
+      div.className = `session ${locCls}${chgText ? " changed" : ""}`;
       div.style.gridColumn = col;
       div.style.gridRow = `${e.start_tick - open + 2} / ${e.end_tick - open + 2}`;
-      div.title = `${e.class_name} — ${e.teacher}, ${e.start_label}–${e.end_label}`;
-      div.innerHTML = `<div class="cls">${esc(e.class_name)}</div>
+      div.title = `${e.class_name} — ${e.teacher}, ${e.start_label}–${e.end_label}`
+        + (chgText ? `\n★ ${chgText}` : "");
+      div.innerHTML = (chgText ? `<span class="chg-dot" title="${esc(chgText)}">★</span>` : "")
+        + `<div class="cls">${esc(e.class_name)}</div>
         <div class="meta">${e.start_label}–${e.end_label} · ${esc(e.teacher)}</div>`;
       grid.appendChild(div);
     }

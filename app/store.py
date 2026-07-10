@@ -126,9 +126,10 @@ def create_workspace(name: str, seed_from_active: bool = False) -> dict:
         return {"key": key, "name": name}
 
 
-def attach_baseline(school: dict, schedule: dict) -> None:
-    """Record each class's solved slots as `previous_slots` so the solver
-    can prefer keeping them (schedule stability across years)."""
+def attach_baseline(school: dict, schedule: dict, field: str = "previous_slots") -> None:
+    """Record each class's solved slots on the class (default: as
+    `previous_slots`, the year-mirroring baseline; `sticky_slots` is the
+    lightweight re-solve baseline) so the solver can prefer keeping them."""
     by_class = defaultdict(list)
     for e in schedule.get("schedule", []):
         by_class[e["class_id"]].append({
@@ -140,9 +141,9 @@ def attach_baseline(school: dict, schedule: dict) -> None:
     for c in school["classes"]:
         slots = sorted(by_class.get(c["id"], []), key=lambda s: (s["day"], s["start_tick"]))
         if slots:
-            c["previous_slots"] = slots
+            c[field] = slots
         else:
-            c.pop("previous_slots", None)
+            c.pop(field, None)
 
 
 # ── active-workspace file access ──────────────────────────────────────────────

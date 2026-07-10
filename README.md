@@ -111,6 +111,14 @@ Tuesday 17:30 when it becomes next year's EJ3.
 change, an ERP import, or a re-solve. The last 30 states are kept per
 workspace.
 
+**Change tracking**: every solve is compared to the previous one. The
+status bar shows a summary ("35 unchanged · 2 teacher changes"), an
+expandable list spells out each difference ("B2 Gr.1: teacher Petros →
+Maria (Tue 17:30)"), and the affected blocks are outlined in the weekly
+grid. Re-solves are also *sticky*: the solver tie-breaks towards the
+previous schedule (S6, weight 1 for time/teacher/room), so nothing moves
+without an actual reason and the change list stays short and meaningful.
+
 ---
 
 ## Importing students from your ERP (SQL Server)
@@ -177,6 +185,7 @@ teacher** simultaneously, optimising the whole week at once.
 | S3 | Classes flagged `saturday_preferred` should use a Saturday slot | 5 / weekday session |
 | S4 | Schedule stability: keep each class at last year's day + time | 4 / session |
 | S5 | Schedule stability: keep the same teacher at that same slot | 2 / session |
+| S6 | Sticky re-solve: tie-break towards the previous solve (time/teacher/room) | 1 / session |
 
 The solver minimises total penalty. A score of **0** means every preference
 was satisfied as well as every hard rule.

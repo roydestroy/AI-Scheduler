@@ -9,6 +9,7 @@ Then open http://localhost:8000
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -18,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from scheduler.diagnose import diagnose
 from scheduler.solver import solve
-from . import assistant, erp, export, operations, store
+from . import assistant, diff, erp, export, operations, store
 
 app = FastAPI(title="Language School Scheduler", version="0.3")
 
@@ -113,10 +114,18 @@ def reset_school():
 # ── solving ───────────────────────────────────────────────────────────────────
 
 def _solve_and_store(school: dict, time_limit_seconds: int) -> dict:
+    previous = store.load_last_schedule()
+    if previous and previous.get("schedule"):
+        # tie-break towards the previous solve so nothing moves without a
+        # reason (weight-1 sticky_slots; not persisted — school is a copy)
+        school = copy.deepcopy(school)
+        store.attach_baseline(school, previous, field="sticky_slots")
     result = solve(school, time_limit_seconds=time_limit_seconds)
     if not result["schedule"]:
         # explain WHY it is unsolvable (static checks + relaxation probes)
         result["warnings"].extend(diagnose(school, time_limit_per_probe=10))
+    # what changed vs the previous solve, so the user never loses track
+    result["changes"] = diff.compute_changes(previous, result)
     store.save_last_schedule(result)
     return result
 
