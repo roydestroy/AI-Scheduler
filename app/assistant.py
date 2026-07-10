@@ -49,7 +49,8 @@ update_teacher  {"op":"update_teacher","teacher":id_or_name, then any of:
                  "qualified_levels":[level,...], "home":location, "name":str,
                  "blocked_windows":[window,...], "add_blocked_windows":[window,...]}
 remove_teacher  {"op":"remove_teacher","teacher":id_or_name}
-add_room        {"op":"add_room","name":str,"location":location}
+add_room        {"op":"add_room","name":str,"location":location,"capacity":int}
+update_room     {"op":"update_room","room":id_or_name, then any of: "name","location","capacity" (capacity=null → unlimited)}
 remove_room     {"op":"remove_room","room":id_or_name}
 add_class       {"op":"add_class","name":str,"level":level,"periods_per_session":int,"sessions_per_week":int,"preferred_location":location,"saturday_preferred":bool}
 update_class    {"op":"update_class","class":id_or_name, then any of: "level","periods_per_session","sessions_per_week","preferred_location","name","saturday_preferred"}
@@ -119,7 +120,8 @@ def _summarise_school(school: dict) -> str:
 
     lines.append("Rooms:")
     for r in school["rooms"]:
-        lines.append(f"  {r['id']} {r['name']} @ {r['location']}")
+        cap = f", capacity {r['capacity']}" if r.get("capacity") else ""
+        lines.append(f"  {r['id']} {r['name']} @ {r['location']}{cap}")
 
     lines.append("Teachers:")
     for t in school["teachers"]:

@@ -116,11 +116,11 @@ def default_school() -> dict:
         },
 
         "rooms": [
-            {"id": "R1", "location": "A", "name": "Alpha-1"},
-            {"id": "R2", "location": "A", "name": "Alpha-2"},
-            {"id": "R3", "location": "A", "name": "Alpha-3"},
-            {"id": "R4", "location": "B", "name": "Beta-1"},
-            {"id": "R5", "location": "B", "name": "Beta-2"},
+            {"id": "R1", "location": "A", "name": "Alpha-1", "capacity": 12},
+            {"id": "R2", "location": "A", "name": "Alpha-2", "capacity": 10},
+            {"id": "R3", "location": "A", "name": "Alpha-3", "capacity": 8},
+            {"id": "R4", "location": "B", "name": "Beta-1", "capacity": 12},
+            {"id": "R5", "location": "B", "name": "Beta-2", "capacity": 8},
         ],
 
         "teachers": [

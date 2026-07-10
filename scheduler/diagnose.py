@@ -58,6 +58,17 @@ def _static_checks(school: dict) -> list[str]:
                          f"διαθέσιμοι σε κανένα έγκυρο μοτίβο ημερών για "
                          f"{cls['sessions_per_week']}×/εβδομάδα.")
 
+    # 1b. does any room physically fit each class's student count?
+    sizes: dict[str, int] = {}
+    for st in school["students"]:
+        sizes[st["class_id"]] = sizes.get(st["class_id"], 0) + 1
+    for cls in school["classes"]:
+        n = sizes.get(cls["id"], 0)
+        if n and not any((r.get("capacity") or 10**9) >= n for r in school["rooms"]):
+            biggest = max((r.get("capacity") or 0) for r in school["rooms"]) if school["rooms"] else 0
+            notes.append(f"{cls['name']}: έχει {n} μαθητές αλλά η μεγαλύτερη αίθουσα "
+                         f"χωρά μόνο {biggest}.")
+
     # 2. young-learner classes must physically fit before the cutoff
     cutoff = settings["young_learner_cutoff"]
     young = set(settings["young_learner_levels"])

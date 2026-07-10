@@ -335,7 +335,10 @@ def validate_school(school: dict) -> list[str]:
         if r.get("location") not in locations:
             err(f"Room {r.get('id')}: unknown location '{r.get('location')}'.")
         if not r.get("name"):
-            err(f"Room {r.get('id')}: name is required.")
+            err(f"Αίθουσα {r.get('id')}: απαιτείται όνομα.")
+        cap = r.get("capacity")
+        if cap is not None and (not isinstance(cap, int) or cap < 1):
+            err(f"Αίθουσα {r.get('id')}: η χωρητικότητα πρέπει να είναι θετικός ακέραιος ή κενή.")
 
     # teachers
     check_unique_ids("teacher", school["teachers"])

@@ -229,8 +229,31 @@ def _op_add_room(school, op):
         "location": _find_location(school, op.get("location", next(iter(school["locations"])))),
         "name": name,
     }
+    if op.get("capacity"):
+        r["capacity"] = int(op["capacity"])
     school["rooms"].append(r)
-    return f"Προσθήκη αίθουσας {r['name']} ({r['id']}) στο κτήριο {r['location']}"
+    return (f"Προσθήκη αίθουσας {r['name']} ({r['id']}) στο κτήριο {r['location']}"
+            + (f", χωρητικότητα {r['capacity']} μαθητές" if r.get("capacity") else ""))
+
+
+def _op_update_room(school, op):
+    r = _find(school["rooms"], op.get("room"), "room")
+    changes = []
+    if "name" in op:
+        r["name"] = str(op["name"]); changes.append(f"όνομα → {r['name']}")
+    if "location" in op:
+        r["location"] = _find_location(school, op["location"])
+        changes.append(f"κτήριο → {r['location']}")
+    if "capacity" in op:
+        if op["capacity"]:
+            r["capacity"] = int(op["capacity"])
+            changes.append(f"χωρητικότητα → {r['capacity']} μαθητές")
+        else:
+            r.pop("capacity", None)
+            changes.append("χωρητικότητα → απεριόριστη")
+    if not changes:
+        raise OpError(f"update_room για {r['name']}: δεν δόθηκαν αναγνωρίσιμα πεδία.")
+    return f"Ενημέρωση αίθουσας {r['name']} ({r['id']}): " + "· ".join(changes)
 
 
 def _op_remove_room(school, op):
@@ -381,6 +404,7 @@ HANDLERS = {
     "update_teacher":  _op_update_teacher,
     "remove_teacher":  _op_remove_teacher,
     "add_room":        _op_add_room,
+    "update_room":     _op_update_room,
     "remove_room":     _op_remove_room,
     "add_class":       _op_add_class,
     "update_class":    _op_update_class,

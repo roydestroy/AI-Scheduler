@@ -123,6 +123,9 @@ def solve(school: dict, time_limit_seconds: int = 120,
     young_cutoff     = settings["young_learner_cutoff"]
 
     class_map   = {c["id"]: c for c in school["classes"]}
+    class_sizes: dict[str, int] = {}
+    for st_ in school["students"]:
+        class_sizes[st_["class_id"]] = class_sizes.get(st_["class_id"], 0) + 1
     room_map    = {r["id"]: r for r in school["rooms"]}
     teacher_map = {t["id"]: t for t in school["teachers"]}
 
@@ -151,8 +154,12 @@ def solve(school: dict, time_limit_seconds: int = 120,
             else:
                 days_for_sess = set(pat[sess_idx] for pat in patterns)
 
+            size = class_sizes.get(c, 0)
             for day in days_for_sess:
                 for room in school["rooms"]:
+                    cap = room.get("capacity")
+                    if cap and size > cap:      # room too small for this class
+                        continue
                     loc = room["location"]
                     starts = _valid_start_ticks(school, day, loc, dur)
                     if not starts:
@@ -209,10 +216,17 @@ def solve(school: dict, time_limit_seconds: int = 120,
         for sess_idx in range(cls["sessions_per_week"]):
             if not any(k[0] == c and k[1] == sess_idx for k in candidates):
                 excluded.add(c)
-                warnings.append(f"Το {cls['name']} δεν μπόρεσε να προγραμματιστεί καθόλου — "
-                                "δεν υπάρχει έγκυρος συνδυασμός καθηγητή/αίθουσας/ώρας. "
-                                "Ελέγξτε τα προσόντα και τη διαθεσιμότητα των καθηγητών "
-                                "και τα ωράρια λειτουργίας.")
+                size = class_sizes.get(c, 0)
+                caps = [r.get("capacity") for r in school["rooms"]]
+                if size and caps and all(cap and size > cap for cap in caps):
+                    warnings.append(f"Το {cls['name']} δεν μπόρεσε να προγραμματιστεί: έχει "
+                                    f"{size} μαθητές αλλά η μεγαλύτερη αίθουσα χωρά μόνο "
+                                    f"{max(cap for cap in caps if cap)}.")
+                else:
+                    warnings.append(f"Το {cls['name']} δεν μπόρεσε να προγραμματιστεί καθόλου — "
+                                    "δεν υπάρχει έγκυρος συνδυασμός καθηγητή/αίθουσας/ώρας. "
+                                    "Ελέγξτε τα προσόντα και τη διαθεσιμότητα των καθηγητών, "
+                                    "τα ωράρια λειτουργίας και τις χωρητικότητες αιθουσών.")
                 break
     for k, v in candidates.items():
         if k[0] in excluded:

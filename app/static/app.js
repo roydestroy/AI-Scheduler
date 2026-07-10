@@ -334,17 +334,22 @@ function renderTeachers() {
 }
 
 function renderRooms() {
-  let html = `<table class="editor"><tr><th>Id</th><th>Όνομα</th><th>Κτήριο</th><th></th></tr>`;
+  let html = `<table class="editor"><tr><th>Id</th><th>Όνομα</th><th>Κτήριο</th><th title="Μέγιστος αριθμός μαθητών — κενό = απεριόριστη">Χωρητικότητα</th><th></th></tr>`;
   school.rooms.forEach((r, i) => {
     html += `<tr><td>${esc(r.id)}</td>
       <td><input type="text" data-f="name" data-i="${i}" value="${esc(r.name)}"></td>
       <td><select data-f="location" data-i="${i}">${locOptions(r.location)}</select></td>
+      <td><input type="number" min="1" class="narrow" data-f="capacity" data-i="${i}" value="${r.capacity || ""}" placeholder="—"></td>
       <td><button class="row-del" data-i="${i}">✕</button></td></tr>`;
   });
   const host = $("#rooms-editor");
   host.innerHTML = html + `</table>`;
   host.querySelectorAll("input, select").forEach((el) => el.addEventListener("change", () => {
-    school.rooms[+el.dataset.i][el.dataset.f] = el.value.trim();
+    const r = school.rooms[+el.dataset.i];
+    if (el.dataset.f === "capacity") {
+      const n = parseInt(el.value, 10);
+      if (n >= 1) r.capacity = n; else delete r.capacity;
+    } else r[el.dataset.f] = el.value.trim();
     setDirty(true);
   }));
   host.querySelectorAll(".row-del").forEach((b) => b.addEventListener("click", () => {
