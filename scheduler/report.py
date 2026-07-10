@@ -1,16 +1,23 @@
 """
-Report v2 — pretty-print the v2 schedule.
+Report v3 — pretty-print the schedule for the default sample school.
+
+Run from the repo root:
+    python -m scheduler.report
 """
-from solver import solve
-from data import DAYS, ROOMS, TEACHERS, CLASSES, STUDENTS, tick_label, YOUNG_LEARNER_LEVELS
 from collections import defaultdict
 
+from .solver import solve
+from .data import DAYS, default_school
+
+
 def run():
+    school = default_school()
+
     print("=" * 72)
-    print("  LANGUAGE SCHOOL SCHEDULER v2 — solving …")
+    print("  LANGUAGE SCHOOL SCHEDULER v3 — solving …")
     print("=" * 72)
 
-    result = solve(time_limit_seconds=120)
+    result = solve(school, time_limit_seconds=120)
     print(f"\n  Solver status : {result['status']}")
     if result["objective"] is not None:
         print(f"  Penalty score : {result['objective']}  (lower = better)")
@@ -18,6 +25,10 @@ def run():
         print(f"  ⚠️  {w}")
 
     if not result["schedule"]:
+        from .diagnose import diagnose
+        print("\n  Diagnosing why no schedule exists …")
+        for n in diagnose(school):
+            print(f"  • {n}")
         return
 
     sched = result["schedule"]
@@ -70,7 +81,7 @@ def run():
     print("  SIBLING GROUP VERIFICATION")
     print("─" * 72)
     sib_groups = defaultdict(list)
-    for s in STUDENTS:
+    for s in school["students"]:
         if s["sibling_group"]:
             sib_groups[s["sibling_group"]].append(s)
 
@@ -96,7 +107,7 @@ def run():
     print("\n" + "─" * 72)
     print("  STUDENT CONSTRAINT VERIFICATION")
     print("─" * 72)
-    for s in STUDENTS:
+    for s in school["students"]:
         if not s["blocked_windows"]:
             continue
         violations = []
@@ -105,7 +116,6 @@ def run():
                 continue
             for (bday, bopen, bclose) in s["blocked_windows"]:
                 if e["day_idx"] == bday:
-                    # check overlap
                     if e["start_tick"] < bclose and e["end_tick"] > bopen:
                         violations.append(f"{e['day']} {e['start_label']}")
         icon = "✅" if not violations else f"❌ VIOLATION {violations}"
@@ -117,7 +127,7 @@ def run():
     print("─" * 72)
     print(f"  {'Class':28} {'Pattern':20} {'Periods/sess':13} {'Total h/wk'}")
     print("  " + "─" * 65)
-    for cls in CLASSES:
+    for cls in school["classes"]:
         c = cls["id"]
         days = sorted(class_days[c])
         pattern = " / ".join(days)
@@ -128,6 +138,7 @@ def run():
     print("\n" + "=" * 72)
     print("  Done.")
     print("=" * 72)
+
 
 if __name__ == "__main__":
     run()

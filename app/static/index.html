@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Language School Scheduler</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>🗓 Language School Scheduler</h1>
+    <span id="ai-pill" class="pill pill-unknown" title="AI assistant status">AI: checking…</span>
+  </div>
+  <nav>
+    <button class="tab-btn active" data-tab="schedule">Schedule</button>
+    <button class="tab-btn" data-tab="data">School Data</button>
+    <button class="tab-btn" data-tab="assistant">Assistant</button>
+  </nav>
+  <div class="header-actions">
+    <button id="solve-btn" class="primary">⚙ Solve</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── Schedule tab ─────────────────────────────────────────────── -->
+  <section id="tab-schedule" class="tab active">
+    <div id="solve-status" class="status-bar hidden"></div>
+    <div id="schedule-grids">
+      <p class="empty-note">No schedule yet — press <b>Solve</b> to generate the weekly timetable.</p>
+    </div>
+  </section>
+
+  <!-- ── Data tab ─────────────────────────────────────────────────── -->
+  <section id="tab-data" class="tab">
+    <div class="data-toolbar">
+      <span id="data-dirty" class="dirty-note hidden">Unsaved changes</span>
+      <button id="save-btn" class="primary">💾 Save changes</button>
+      <button id="reset-btn" class="danger">Reset to sample data</button>
+    </div>
+    <div id="data-errors" class="error-box hidden"></div>
+
+    <details open>
+      <summary>Opening hours</summary>
+      <div id="hours-editor"></div>
+      <p class="hint">Format: <code>15:30-21:00</code> — leave empty for closed.</p>
+    </details>
+
+    <details open>
+      <summary>Teachers</summary>
+      <div id="teachers-editor"></div>
+      <button class="add-btn" data-add="teacher">＋ Add teacher</button>
+      <p class="hint">Levels: comma-separated. Blocked: e.g. <code>Mon 16:00-18:00; Wed 17:00-19:00</code>.</p>
+    </details>
+
+    <details open>
+      <summary>Rooms</summary>
+      <div id="rooms-editor"></div>
+      <button class="add-btn" data-add="room">＋ Add room</button>
+    </details>
+
+    <details open>
+      <summary>Classes</summary>
+      <div id="classes-editor"></div>
+      <button class="add-btn" data-add="class">＋ Add class</button>
+    </details>
+
+    <details open>
+      <summary>Students</summary>
+      <div id="students-editor"></div>
+      <button class="add-btn" data-add="student">＋ Add student</button>
+      <p class="hint">Students in the same sibling group get at least one shared day per week.</p>
+    </details>
+  </section>
+
+  <!-- ── Assistant tab ────────────────────────────────────────────── -->
+  <section id="tab-assistant" class="tab">
+    <div id="ai-banner" class="ai-banner hidden"></div>
+    <div id="chat-log">
+      <div class="msg assistant">
+        <p>Hi! Tell me what changed and I'll prepare the data updates — you confirm, the solver reschedules. For example:</p>
+        <ul>
+          <li>“Maria can't work Tuesdays anymore”</li>
+          <li>“New student Eleni joins B2 Gr.1, she has dance Wednesdays 5–7pm”</li>
+          <li>“Close branch B on Saturdays” • “Add a room Beta-3 at branch B”</li>
+        </ul>
+      </div>
+    </div>
+    <form id="chat-form">
+      <input id="chat-input" type="text" placeholder="Describe a change or ask a question…" autocomplete="off">
+      <button type="submit" class="primary" id="chat-send">Send</button>
+    </form>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
