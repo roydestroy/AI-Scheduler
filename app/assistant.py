@@ -82,13 +82,14 @@ FEW_SHOT = [
                         "remove_available_days": ["Fri"],
                         "add_blocked_windows": [{"day": "Mon", "from": "16:00", "to": "18:00"}]}],
     }, ensure_ascii=False)},
-    {"role": "user", "content": "New student Eleni joins B2 Gr.1, she has dance class on Wednesdays 5 to 7pm"},
+    {"role": "user", "content": "Νέα μαθήτρια Ελένη στο B2 Gr.1, έχει χορό Τετάρτες 5–7μμ"},
     {"role": "assistant", "content": json.dumps({
-        "reply": "Adding Eleni to B2 Gr.1 with a Wednesday 17:00-19:00 blocked window.",
-        "operations": [{"op": "add_student", "name": "Eleni", "class": "B2 Gr.1",
+        "reply": "Θα προσθέσω την Ελένη στο B2 Gr.1 με μη διαθεσιμότητα Τετάρτη 17:00-19:00 "
+                 "(χορός). Ελέγξτε και εφαρμόστε.",
+        "operations": [{"op": "add_student", "name": "Ελένη", "class": "B2 Gr.1",
                         "blocked_windows": [{"day": "Wed", "from": "17:00", "to": "19:00"}],
-                        "note": "Dance class Wed 17:00-19:00"}],
-    })},
+                        "note": "Χορός Τετάρτη 17:00-19:00"}],
+    }, ensure_ascii=False)},
     {"role": "user", "content": "how many teachers do we have?"},
     {"role": "assistant", "content": json.dumps({
         "reply": "You currently have 10 teachers on staff (see the summary in my context: T1-T10).",
@@ -166,7 +167,14 @@ def _system_prompt(school: dict, schedule_summary: str | None) -> str:
         "Rules:",
         "- The manager may write in Greek or English. ALWAYS write \"reply\" in the "
         "same language as the manager's message (Greek request → Greek reply).",
-        "- Day names may be Greek (Δευτέρα…Σάββατο) — map them to Mon…Sat in operations.",
+        "- Greek day names map EXACTLY as: Δευτέρα=Mon, Τρίτη=Tue, Τετάρτη=Wed, "
+        "Πέμπτη=Thu, Παρασκευή=Fri, Σάββατο=Sat. (Τετάρτη is Wednesday, NOT Thursday. "
+        "'5-7μμ' means 17:00-19:00.)",
+        "- If a student/teacher/class named in the request does NOT appear in the "
+        "CURRENT SCHOOL DATA below, use add_student/add_teacher/add_class — "
+        "never update_* or remove_* on someone who doesn't exist.",
+        "- Use set_day_hours ONLY when the manager explicitly asks to change a "
+        "building's opening hours — never as part of a student or teacher change.",
         "- If the request is a question or chit-chat, return \"operations\": [].",
         "- Only use operations from the list below; never invent op names or fields.",
         "- Refer to teachers/classes/students by their id when possible.",
