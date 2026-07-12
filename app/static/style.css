@@ -267,6 +267,10 @@ table.editor input.narrow { width: 64px; }
 }
 #class-panel h3 { margin: 0 0 4px; font-size: 16px; }
 #class-panel h4 { margin: 12px 0 4px; font-size: 13.5px; }
+.constraint-row {
+  font-size: 13.5px; padding: 5px 0; border-bottom: 1px solid var(--line);
+  display: flex; gap: 8px; align-items: baseline;
+}
 .panel-close {
   float: right; border: none; background: none; cursor: pointer;
   font-size: 15px; color: var(--muted);

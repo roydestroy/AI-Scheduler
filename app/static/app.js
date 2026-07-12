@@ -723,6 +723,55 @@ $("#qadd-teacher").addEventListener("click", async () => {
   }
 });
 
+
+/* ── constraints overview: every user-set hard restriction, removable ── */
+function renderConstraints() {
+  const rows = [];
+  const row = (txt, ops) => rows.push({ txt, ops });
+  for (const c of school.classes) {
+    if (c.pinned_teacher) {
+      const t = school.teachers.find((x) => x.id === c.pinned_teacher);
+      row(`📌 ${c.name}: σταθερός καθηγητής ${t ? t.name : c.pinned_teacher}`,
+          [{ op: "update_class", class: c.id, pinned_teacher: null }]);
+    }
+  }
+  for (const t of school.teachers) {
+    for (let d = 0; d < 6; d++) {
+      if (!t.available_days.includes(d))
+        row(`🚫 ${t.name}: δεν εργάζεται ${GDAYS_FULL[d]}`,
+            [{ op: "update_teacher", teacher: t.id, add_available_days: [d] }]);
+    }
+    t.blocked_windows.forEach((w, i) => row(
+      `⛔ ${t.name}: μη διαθέσιμος/η ${GDAYS[w[0]]} ${tickLabel(w[1])}-${tickLabel(w[2])}`,
+      [{ op: "update_teacher", teacher: t.id,
+         blocked_windows: t.blocked_windows.filter((_, j) => j !== i) }]));
+  }
+  for (const st of school.students) {
+    (st.blocked_windows || []).forEach((w, i) => row(
+      `⛔ ${st.name} (μαθητής): ${GDAYS[w[0]]} ${tickLabel(w[1])}-${tickLabel(w[2])}`,
+      [{ op: "update_student", student: st.id,
+         blocked_windows: st.blocked_windows.filter((_, j) => j !== i) }]));
+  }
+  for (const r of school.rooms) {
+    if (r.capacity) row(`👥 ${r.name}: έως ${r.capacity} μαθητές`,
+      [{ op: "update_room", room: r.id, capacity: null }]);
+  }
+
+  const panel = $("#class-panel");
+  panel.innerHTML = `<button class="panel-close" id="cp-close">✕</button>
+    <h3>🔒 Ενεργοί περιορισμοί (${rows.length})</h3>
+    <p class="hint">Πρόσθετοι κανόνες που έχετε ορίσει — το ✕ τους αφαιρεί και
+      επιλύει ξανά. (Ωράρια/κλειστές ημέρες: καρτέλα Δεδομένα.)</p>
+    ${rows.map((r, i) => `<div class="constraint-row">
+      <button class="row-del" data-ci="${i}">✕</button> ${esc(r.txt)}</div>`).join("")
+      || '<p class="hint">Κανένας πρόσθετος περιορισμός.</p>'}`;
+  panel.classList.remove("hidden");
+  $("#cp-close").addEventListener("click", closeClassPanel);
+  panel.querySelectorAll("[data-ci]").forEach((b) => b.addEventListener("click", () =>
+    applyOps(rows[+b.dataset.ci].ops)));
+}
+$("#show-constraints").addEventListener("click", renderConstraints);
+
 /* ── workspaces & undo ─────────────────────────────────────────── */
 
 async function renderWorkspaces() {
