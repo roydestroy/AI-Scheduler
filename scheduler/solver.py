@@ -143,6 +143,17 @@ def solve(school: dict, time_limit_seconds: int = 120,
         q_teachers= _qualified_teachers(school, cls)
         patterns  = _day_patterns(school, cls)
 
+        # pinned teacher: hard-assign this class to one teacher (set by
+        # dragging a teacher onto the class in the schedule UI)
+        pin = cls.get("pinned_teacher")
+        if pin:
+            if pin in q_teachers:
+                q_teachers = [pin]
+            else:
+                tname = teacher_map.get(pin, {}).get("name", pin)
+                warnings.append(f"Το {cls['name']}: ο καρφιτσωμένος καθηγητής {tname} δεν είναι "
+                                f"καταρτισμένος για το επίπεδο {cls['level']} — η καρφίτσα αγνοείται.")
+
         if not q_teachers:
             warnings.append(f"Δεν υπάρχει καταρτισμένος καθηγητής για το {cls['name']} "
                             f"(επίπεδο {cls['level']}).")

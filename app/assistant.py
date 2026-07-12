@@ -53,7 +53,7 @@ add_room        {"op":"add_room","name":str,"location":location,"capacity":int}
 update_room     {"op":"update_room","room":id_or_name, then any of: "name","location","capacity" (capacity=null → unlimited)}
 remove_room     {"op":"remove_room","room":id_or_name}
 add_class       {"op":"add_class","name":str,"level":level,"periods_per_session":int,"sessions_per_week":int,"preferred_location":location,"saturday_preferred":bool}
-update_class    {"op":"update_class","class":id_or_name, then any of: "level","periods_per_session","sessions_per_week","preferred_location","name","saturday_preferred"}
+update_class    {"op":"update_class","class":id_or_name, then any of: "level","periods_per_session","sessions_per_week","preferred_location","name","saturday_preferred","pinned_teacher" (fix one teacher to the class; null unpins)}
 remove_class    {"op":"remove_class","class":id_or_name}
 add_student     {"op":"add_student","name":str,"class":id_or_name,"sibling_group":str_or_null,"blocked_windows":[window,...],"note":str}
 update_student  {"op":"update_student","student":id_or_name, then any of: "class","sibling_group","blocked_windows","add_blocked_windows","note","name"}

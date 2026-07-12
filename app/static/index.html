@@ -32,6 +32,12 @@
 
   <!-- ── Schedule tab ─────────────────────────────────────────────── -->
   <section id="tab-schedule" class="tab active">
+    <div class="sched-toolbar">
+      <button class="add-btn" id="qadd-class">＋ Τμήμα</button>
+      <button class="add-btn" id="qadd-teacher">＋ Καθηγητής</button>
+      <span class="hint">Κλικ σε τμήμα για τους μαθητές του · σύρετε μαθητή ή καθηγητή
+        πάνω σε άλλο τμήμα ίδιου επιπέδου</span>
+    </div>
     <div id="solve-status" class="status-bar hidden"></div>
     <div id="schedule-grids">
       <p class="empty-note">Δεν υπάρχει ακόμη πρόγραμμα — πατήστε <b>Επίλυση</b> για να δημιουργηθεί το εβδομαδιαίο πρόγραμμα.</p>
@@ -110,6 +116,10 @@
   </section>
 
 </main>
+
+<div id="class-panel" class="hidden"></div>
+<div id="mini-form" class="hidden"></div>
+<div id="toast" class="hidden"></div>
 
 <script src="app.js"></script>
 </body>

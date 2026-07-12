@@ -370,6 +370,9 @@ def validate_school(school: dict) -> list[str]:
             err(f"Class {cid}: unknown preferred_location '{pref}'.")
         if "saturday_preferred" in c and not isinstance(c["saturday_preferred"], bool):
             err(f"Class {cid}: saturday_preferred must be true/false.")
+        pin = c.get("pinned_teacher")
+        if pin and pin not in {t.get("id") for t in school["teachers"]}:
+            err(f"Τμήμα {cid}: ο σταθερός καθηγητής '{pin}' δεν υπάρχει.")
 
     # students
     check_unique_ids("student", school["students"])

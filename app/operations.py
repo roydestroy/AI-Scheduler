@@ -303,6 +303,17 @@ def _op_update_class(school, op):
     if "saturday_preferred" in op:
         c["saturday_preferred"] = bool(op["saturday_preferred"])
         changes.append(f"προτίμηση Σαββάτου → {'ναι' if c['saturday_preferred'] else 'όχι'}")
+    if "pinned_teacher" in op:
+        if op["pinned_teacher"]:
+            t = _find(school["teachers"], op["pinned_teacher"], "teacher")
+            if c["level"] not in t["qualified_levels"]:
+                raise OpError(f"Ο/Η {t['name']} δεν είναι καταρτισμένος/η "
+                              f"για το επίπεδο {c['level']}.")
+            c["pinned_teacher"] = t["id"]
+            changes.append(f"σταθερός καθηγητής → {t['name']} 📌")
+        else:
+            c.pop("pinned_teacher", None)
+            changes.append("αφαίρεση σταθερού καθηγητή")
     if not changes:
         raise OpError(f"update_class για {c['name']}: δεν δόθηκαν αναγνωρίσιμα πεδία.")
     return f"Ενημέρωση τμήματος {c['name']} ({c['id']}): " + "· ".join(changes)

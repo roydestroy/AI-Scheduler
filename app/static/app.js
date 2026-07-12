@@ -187,20 +187,37 @@ function renderSchedule(result) {
       }
     }
 
-    // session blocks
+    // session blocks (interactive: click = class panel, DnD targets)
     for (const e of entries) {
       const col = rooms.findIndex((r) => r.id === e.room_id) + 2;
       const locCls = `loc-${locIds.indexOf(e.location)}`;
       const chgText = changed[`${e.class_id}|${e.day_idx}|${e.start_tick}`];
+      const cls = school.classes.find((c) => c.id === e.class_id);
+      const nStudents = school.students.filter((s) => s.class_id === e.class_id).length;
+      const room = school.rooms.find((r) => r.id === e.room_id);
+      const cap = room && room.capacity ? `/${room.capacity}` : "";
+      const pinned = cls && cls.pinned_teacher;
+
       const div = document.createElement("div");
       div.className = `session ${locCls}${chgText ? " changed" : ""}`;
       div.style.gridColumn = col;
       div.style.gridRow = `${e.start_tick - open + 2} / ${e.end_tick - open + 2}`;
+      div.dataset.classId = e.class_id;
+      div.dataset.level = cls ? cls.level : "";
       div.title = `${e.class_name} — ${e.teacher}, ${e.start_label}–${e.end_label}`
         + (chgText ? `\n★ ${chgText}` : "");
       div.innerHTML = (chgText ? `<span class="chg-dot" title="${esc(chgText)}">★</span>` : "")
         + `<div class="cls">${esc(e.class_name)}</div>
-        <div class="meta">${e.start_label}–${e.end_label} · ${esc(e.teacher)}</div>`;
+        <div class="meta">${e.start_label}–${e.end_label} ·
+          <span class="drag-chip teacher-chip" draggable="true"
+                data-teacher="${esc(e.teacher_id)}"
+                title="Σύρετε σε τμήμα για να ορίσετε σταθερό καθηγητή">${pinned ? "📌" : ""}${esc(e.teacher)}</span></div>
+        <div class="meta">👥 ${nStudents}${cap}</div>`;
+
+      div.addEventListener("click", (ev) => {
+        if (!ev.target.classList.contains("drag-chip")) openClassPanel(e.class_id);
+      });
+      wireDropTarget(div);
       grid.appendChild(div);
     }
 
@@ -493,6 +510,199 @@ $("#reset-btn").addEventListener("click", async () => {
   updateUndo();
   $("#schedule-grids").innerHTML = `<p class="empty-note">Έγινε επαναφορά — πατήστε <b>Επίλυση</b> για νέο πρόγραμμα.</p>`;
   $("#solve-status").classList.add("hidden");
+});
+
+/* ── interactive schedule: DnD, class panel, quick-add ─────────── */
+
+let toastTimer = null;
+function toast(msg, ms = 6000, bad = false) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = bad ? "toast-bad" : "toast-ok";
+  clearTimeout(toastTimer);
+  if (ms) toastTimer = setTimeout(() => t.classList.add("hidden"), ms);
+}
+
+/* apply operations through the standard pipeline: validated, previewed
+   server-side, recorded in history (undo!), then auto re-solve */
+async function applyOps(operations) {
+  toast("⏳ Εφαρμογή & επίλυση…", 0);
+  try {
+    const body = await api("/api/assistant/apply", {
+      method: "POST", body: JSON.stringify({ operations, resolve: true }),
+    });
+    school = body.school;
+    schoolRev = body.rev;
+    renderData();
+    updateUndo();
+    closeClassPanel();
+    if (body.result) {
+      renderSchedule(body.result);
+      try { scheduleRev = (await api("/api/rev")).schedule_rev; } catch {}
+    }
+    toast(`✓ ${body.preview[0] || "Εφαρμόστηκε"} — Αναίρεση διαθέσιμη.`);
+  } catch (e) {
+    toast(`⚠ ${e.message}`, 9000, true);
+  }
+}
+
+/* drag sources are wired via delegation; payload describes what moves */
+document.addEventListener("dragstart", (ev) => {
+  const chip = ev.target.closest ? ev.target.closest(".drag-chip") : null;
+  if (!chip) return;
+  let payload = null;
+  if (chip.dataset.teacher) payload = { type: "teacher", id: chip.dataset.teacher };
+  if (chip.dataset.student) {
+    payload = { type: "student", id: chip.dataset.student,
+                level: chip.dataset.level, from: chip.dataset.from };
+  }
+  if (payload) ev.dataTransfer.setData("text/plain", JSON.stringify(payload));
+});
+
+function dropCheck(block, payload) {
+  const target = school.classes.find((c) => c.id === block.dataset.classId);
+  if (!target || !payload) return { ok: false, why: "" };
+  if (payload.type === "student") {
+    if (payload.from === target.id) return { ok: false, why: "Ήδη σε αυτό το τμήμα." };
+    if (payload.level !== target.level)
+      return { ok: false, why: `Διαφορετικό επίπεδο (${payload.level} → ${target.level}).` };
+    return { ok: true, ops: [{ op: "update_student", student: payload.id, class: target.id }] };
+  }
+  if (payload.type === "teacher") {
+    const t = school.teachers.find((x) => x.id === payload.id);
+    if (!t) return { ok: false, why: "" };
+    if (!t.qualified_levels.includes(target.level))
+      return { ok: false, why: `Ο/Η ${t.name} δεν είναι καταρτισμένος/η για ${target.level}.` };
+    return { ok: true, ops: [{ op: "update_class", class: target.id, pinned_teacher: payload.id }] };
+  }
+  return { ok: false, why: "" };
+}
+
+function wireDropTarget(block) {
+  block.addEventListener("dragover", (ev) => {
+    ev.preventDefault();                      // allow drop; validity shown on drop
+    block.classList.add("drop-hover");
+  });
+  block.addEventListener("dragleave", () => block.classList.remove("drop-hover"));
+  block.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    block.classList.remove("drop-hover");
+    let payload = null;
+    try { payload = JSON.parse(ev.dataTransfer.getData("text/plain")); } catch {}
+    const check = dropCheck(block, payload);
+    if (!check.ok) {
+      if (check.why) toast(`⚠ ${check.why}`, 6000, true);
+      return;
+    }
+    applyOps(check.ops);
+  });
+}
+
+/* ── class panel: students of a class, draggable + quick-add ───── */
+
+function openClassPanel(classId) {
+  const cls = school.classes.find((c) => c.id === classId);
+  if (!cls) return;
+  const students = school.students.filter((s) => s.class_id === classId);
+  const pinnedT = cls.pinned_teacher
+    ? school.teachers.find((t) => t.id === cls.pinned_teacher) : null;
+  const panel = $("#class-panel");
+  panel.innerHTML = `
+    <button class="panel-close" id="cp-close">✕</button>
+    <h3>${esc(cls.name)}</h3>
+    <p class="hint">Επίπεδο ${esc(cls.level)} · ${cls.periods_per_session} περίοδοι ×
+      ${cls.sessions_per_week}/εβδ.${pinnedT ? ` · 📌 ${esc(pinnedT.name)}` : ""}</p>
+    ${pinnedT ? `<button class="add-btn" id="cp-unpin">Αφαίρεση σταθερού καθηγητή</button>` : ""}
+    <h4>Μαθητές (${students.length})</h4>
+    <div class="chip-list">${students.map((s) =>
+      `<span class="drag-chip student-chip" draggable="true"
+             data-student="${esc(s.id)}" data-level="${esc(cls.level)}" data-from="${esc(cls.id)}"
+             title="Σύρετε σε τμήμα ίδιου επιπέδου στο πρόγραμμα">${esc(s.name)}</span>`).join("")
+      || '<span class="hint">Κανένας μαθητής</span>'}</div>
+    <button class="add-btn" id="cp-add-student">＋ Προσθήκη μαθητή εδώ</button>
+    <p class="hint">Σύρετε έναν μαθητή πάνω σε άλλο τμήμα ίδιου επιπέδου για μετακίνηση.
+      Οι αλλαγές επιλύονται αυτόματα και αναιρούνται με το ↩.</p>`;
+  panel.classList.remove("hidden");
+
+  $("#cp-close").addEventListener("click", closeClassPanel);
+  const unpin = $("#cp-unpin");
+  if (unpin) unpin.addEventListener("click", () =>
+    applyOps([{ op: "update_class", class: cls.id, pinned_teacher: null }]));
+  $("#cp-add-student").addEventListener("click", async () => {
+    const vals = await miniForm(`Νέος μαθητής στο ${cls.name}`, [
+      { key: "name", label: "Όνομα", type: "text" },
+    ]);
+    if (vals && vals.name) applyOps([{ op: "add_student", name: vals.name, class: cls.id }]);
+  });
+}
+
+function closeClassPanel() { $("#class-panel").classList.add("hidden"); }
+
+/* ── mini form popover (quick-add) ─────────────────────────────── */
+
+function miniForm(title, fields) {
+  return new Promise((resolve) => {
+    const host = $("#mini-form");
+    host.innerHTML = `<h3>${esc(title)}</h3>` + fields.map((f) => {
+      if (f.type === "select") {
+        return `<label>${esc(f.label)}<select data-k="${f.key}">${
+          f.options.map((o) => `<option>${esc(o)}</option>`).join("")}</select></label>`;
+      }
+      if (f.type === "checks") {
+        return `<fieldset><legend>${esc(f.label)}</legend>${f.options.map((o) =>
+          `<label class="chk"><input type="checkbox" data-k="${f.key}" value="${esc(o)}">${esc(o)}</label>`).join("")}</fieldset>`;
+      }
+      const extra = f.type === "number" ? `type="number" min="1" max="6" value="${f.value || 2}"` : `type="text"`;
+      return `<label>${esc(f.label)}<input ${extra} data-k="${f.key}"></label>`;
+    }).join("") + `
+    <div class="actions">
+      <button class="primary" id="mf-ok">Προσθήκη</button>
+      <button class="add-btn" id="mf-cancel">Άκυρο</button>
+    </div>`;
+    host.classList.remove("hidden");
+    const input = host.querySelector("input[type=text]");
+    if (input) input.focus();
+
+    const done = (vals) => { host.classList.add("hidden"); resolve(vals); };
+    $("#mf-cancel").addEventListener("click", () => done(null));
+    $("#mf-ok").addEventListener("click", () => {
+      const vals = {};
+      for (const f of fields) {
+        if (f.type === "checks") {
+          vals[f.key] = [...host.querySelectorAll(`input[data-k="${f.key}"]:checked`)].map((x) => x.value);
+        } else {
+          const el = host.querySelector(`[data-k="${f.key}"]`);
+          vals[f.key] = f.type === "number" ? parseInt(el.value, 10) || 2 : el.value.trim();
+        }
+      }
+      done(vals);
+    });
+  });
+}
+
+$("#qadd-class").addEventListener("click", async () => {
+  const vals = await miniForm("Νέο τμήμα", [
+    { key: "name", label: "Όνομα (π.χ. EJ3 Τμήμα 2)", type: "text" },
+    { key: "level", label: "Επίπεδο", type: "select", options: school.settings.levels },
+    { key: "periods_per_session", label: "Περίοδοι ανά μάθημα", type: "number", value: 2 },
+    { key: "sessions_per_week", label: "Μαθήματα ανά εβδομάδα", type: "select", options: [1, 2, 3] },
+  ]);
+  if (vals && vals.name) {
+    applyOps([{ op: "add_class", name: vals.name, level: vals.level,
+                periods_per_session: vals.periods_per_session,
+                sessions_per_week: parseInt(vals.sessions_per_week, 10) || 2 }]);
+  }
+});
+
+$("#qadd-teacher").addEventListener("click", async () => {
+  const vals = await miniForm("Νέος καθηγητής", [
+    { key: "name", label: "Όνομα", type: "text" },
+    { key: "qualified_levels", label: "Επίπεδα που διδάσκει", type: "checks",
+      options: school.settings.levels },
+  ]);
+  if (vals && vals.name) {
+    applyOps([{ op: "add_teacher", name: vals.name, qualified_levels: vals.qualified_levels }]);
+  }
 });
 
 /* ── workspaces & undo ─────────────────────────────────────────── */
