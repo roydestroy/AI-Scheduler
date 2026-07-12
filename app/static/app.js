@@ -132,9 +132,14 @@ function changedKeyMap(result) {
   return map;
 }
 
+let lastResult = null;          // for re-render on view toggle
+let showStudents = localStorage.getItem("showStudents") === "1";
+
 function renderSchedule(result) {
+  lastResult = result;
   renderStatus(result);
   const changed = changedKeyMap(result);
+  const tickPx = showStudents ? 16 : 7;   // roster view needs taller blocks
   const host = $("#schedule-grids");
   host.innerHTML = "";
   const sched = result.schedule || [];
@@ -167,7 +172,7 @@ function renderSchedule(result) {
     const grid = document.createElement("div");
     grid.className = "day-grid";
     grid.style.gridTemplateColumns = `56px repeat(${rooms.length}, minmax(110px, 1fr))`;
-    grid.style.gridTemplateRows = `26px repeat(${nticks}, 7px)`;
+    grid.style.gridTemplateRows = `26px repeat(${nticks}, ${tickPx}px)`;
 
     // header row (explicit columns — auto-placement would misalign them)
     grid.insertAdjacentHTML("beforeend", `<div class="grid-head" style="grid-row:1;grid-column:1"></div>`);
@@ -193,7 +198,8 @@ function renderSchedule(result) {
       const locCls = `loc-${locIds.indexOf(e.location)}`;
       const chgText = changed[`${e.class_id}|${e.day_idx}|${e.start_tick}`];
       const cls = school.classes.find((c) => c.id === e.class_id);
-      const nStudents = school.students.filter((s) => s.class_id === e.class_id).length;
+      const clsStudents = school.students.filter((s) => s.class_id === e.class_id);
+      const nStudents = clsStudents.length;
       const room = school.rooms.find((r) => r.id === e.room_id);
       const cap = room && room.capacity ? `/${room.capacity}` : "";
       const pinned = cls && cls.pinned_teacher;
@@ -212,7 +218,11 @@ function renderSchedule(result) {
           <span class="drag-chip teacher-chip" draggable="true"
                 data-teacher="${esc(e.teacher_id)}"
                 title="Σύρετε σε τμήμα για να ορίσετε σταθερό καθηγητή">${pinned ? "📌" : ""}${esc(e.teacher)}</span></div>
-        <div class="meta">👥 ${nStudents}${cap}</div>`;
+        <div class="meta">👥 ${nStudents}${cap}</div>`
+        + (showStudents && cls ? `<div class="roster">${clsStudents.map((s) =>
+            `<span class="drag-chip student-chip mini" draggable="true"
+                   data-student="${esc(s.id)}" data-level="${esc(cls.level)}"
+                   data-from="${esc(cls.id)}">${esc(s.name.split(" ")[0])}</span>`).join("")}</div>` : "");
 
       div.addEventListener("click", (ev) => {
         if (!ev.target.classList.contains("drag-chip")) openClassPanel(e.class_id);
@@ -513,6 +523,14 @@ $("#reset-btn").addEventListener("click", async () => {
 });
 
 /* ── interactive schedule: DnD, class panel, quick-add ─────────── */
+
+const showStudentsBox = $("#show-students");
+showStudentsBox.checked = showStudents;
+showStudentsBox.addEventListener("change", () => {
+  showStudents = showStudentsBox.checked;
+  localStorage.setItem("showStudents", showStudents ? "1" : "0");
+  if (lastResult) renderSchedule(lastResult);
+});
 
 let toastTimer = null;
 function toast(msg, ms = 6000, bad = false) {
