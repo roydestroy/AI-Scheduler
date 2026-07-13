@@ -241,7 +241,11 @@ def post_solve(req: SolveRequest = SolveRequest()):
 
 @app.get("/api/schedule")
 def get_schedule():
-    return store.load_last_schedule() or {"status": None, "schedule": [], "warnings": []}
+    result = store.load_last_schedule() or {"status": None, "schedule": [], "warnings": []}
+    # enrich older stored schedules (saved before the preferences view existed)
+    if result.get("schedule") and "preferences" not in result:
+        result["preferences"] = preference_report(store.load_school(), result["schedule"])
+    return result
 
 
 # ── ERP import ────────────────────────────────────────────────────────────────
