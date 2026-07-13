@@ -189,6 +189,7 @@ function renderSchedule(result) {
     grid.className = "day-grid";
     grid.dataset.day = day;
     grid.dataset.open = open;
+    grid.dataset.close = close;
     grid.style.gridTemplateColumns = `56px repeat(${rooms.length}, minmax(110px, 1fr))`;
     grid.style.gridTemplateRows = `26px repeat(${nticks}, ${tickPx}px)`;
     wireGridTimePin(grid, tickPx);
@@ -652,6 +653,8 @@ async function applyOps(operations) {
 }
 
 /* drag sources are wired via delegation; payload describes what moves */
+let dragPayload = null;   // readable during dragover (dataTransfer is not)
+
 document.addEventListener("dragstart", (ev) => {
   const chip = ev.target.closest ? ev.target.closest(".drag-chip") : null;
   let payload = null;
@@ -665,27 +668,57 @@ document.addEventListener("dragstart", (ev) => {
     const block = ev.target.closest ? ev.target.closest(".session") : null;
     if (block) payload = { type: "class", id: block.dataset.classId };
   }
+  dragPayload = payload;
   if (payload) ev.dataTransfer.setData("text/plain", JSON.stringify(payload));
 });
+document.addEventListener("dragend", () => { dragPayload = null; clearDropPreview(); });
 
-/* drop a class block onto a grid → pin that class's session to that day+time */
+function clearDropPreview() {
+  document.querySelectorAll(".drop-preview").forEach((el) => el.remove());
+}
+
+/* snapped target tick for a class drop at pointer Y over `grid` */
+function snapTarget(grid, tickPx, clientY, dur) {
+  const box = grid.getBoundingClientRect();
+  const open = +grid.dataset.open, close = +grid.dataset.close;
+  let start = open + Math.round((clientY - box.top - 26) / tickPx);
+  start = Math.max(open, Math.min(start, close - dur));   // keep the block inside hours
+  return start;
+}
+
+/* drop a class block onto a grid → pin that class's session to that day+time.
+   A live preview band snaps to the target slot so the drop isn't a guess. */
 function wireGridTimePin(grid, tickPx) {
-  grid.addEventListener("dragover", (ev) => ev.preventDefault());
-  grid.addEventListener("drop", (ev) => {
-    let payload = null;
-    try { payload = JSON.parse(ev.dataTransfer.getData("text/plain")); } catch {}
-    if (!payload || payload.type !== "class") return;   // student/teacher handled by block
+  grid.addEventListener("dragover", (ev) => {
+    if (!dragPayload || dragPayload.type !== "class") return;
     ev.preventDefault();
-    const box = grid.getBoundingClientRect();
-    const y = ev.clientY - box.top - 26;                // minus header row
-    if (y < 0) return;
+    const cls = school.classes.find((c) => c.id === dragPayload.id);
+    const dur = (cls ? cls.periods_per_session : 2) * 4;
+    const start = snapTarget(grid, tickPx, ev.clientY, dur);
+    let band = grid.querySelector(".drop-preview");
+    if (!band) {
+      clearDropPreview();
+      band = document.createElement("div");
+      band.className = "drop-preview";
+      band.style.gridColumn = "2 / -1";
+      grid.appendChild(band);
+    }
+    band.style.gridRow = `${start - (+grid.dataset.open) + 2} / ${start - (+grid.dataset.open) + 2 + dur}`;
+    band.textContent = `${GDAYS[+grid.dataset.day]} ${tickLabel(start)}–${tickLabel(start + dur)}`;
+  });
+  grid.addEventListener("dragleave", (ev) => {
+    if (!grid.contains(ev.relatedTarget)) clearDropPreview();
+  });
+  grid.addEventListener("drop", (ev) => {
+    if (!dragPayload || dragPayload.type !== "class") return;
+    ev.preventDefault();
+    const cls = school.classes.find((c) => c.id === dragPayload.id);
+    const dur = (cls ? cls.periods_per_session : 2) * 4;
+    const start = snapTarget(grid, tickPx, ev.clientY, dur);
     const day = +grid.dataset.day;
-    const start = +grid.dataset.open + Math.round(y / tickPx);
-    const startTick = Math.max(0, Math.round(start));
-    const hh = String(Math.floor(startTick / 4)).padStart(2, "0");
-    const mm = String((startTick % 4) * 15).padStart(2, "0");
-    applyOps([{ op: "update_class", class: payload.id,
-                pin_slot: { day, start: `${hh}:${mm}` } }]);
+    clearDropPreview();
+    applyOps([{ op: "update_class", class: dragPayload.id,
+                pin_slot: { day, start: tickLabel(start) } }]);
   });
 }
 

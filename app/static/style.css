@@ -338,6 +338,12 @@ table.editor input.narrow { width: 64px; }
 .session.lens-dim { opacity: .18; }
 .session.lens-hit { outline: 2px solid var(--accent); outline-offset: -2px; }
 .session.time-pinned { box-shadow: inset 0 0 0 2px var(--warn); }
+.drop-preview {
+  z-index: 5; pointer-events: none; margin: 1px 3px; border-radius: 8px;
+  background: rgba(37, 99, 235, .18); border: 2px dashed var(--accent);
+  color: var(--accent); font-size: 12px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+}
 .pin-dot { position: absolute; top: 2px; left: 4px; font-size: 10px; }
 
 .menu-wrap { position: relative; }
