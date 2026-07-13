@@ -769,13 +769,27 @@ function openClassPanel(classId) {
   const students = school.students.filter((s) => s.class_id === classId);
   const pinnedT = cls.pinned_teacher
     ? school.teachers.find((t) => t.id === cls.pinned_teacher) : null;
+  // this class's currently-scheduled sessions (for the "pin current time" action)
+  const nowSlots = ((lastResult && lastResult.schedule) || [])
+    .filter((e) => e.class_id === classId)
+    .map((e) => ({ day: e.day_idx, start: e.start_tick, label: `${GDAYS[e.day_idx]} ${e.start_label}` }));
+  const timePinned = (cls.pinned_slots || []).length > 0;
   const panel = $("#class-panel");
   panel.innerHTML = `
     <button class="panel-close" id="cp-close">✕</button>
     <h3>${esc(cls.name)}</h3>
     <p class="hint">Επίπεδο ${esc(cls.level)} · ${cls.periods_per_session} περίοδοι ×
       ${cls.sessions_per_week}/εβδ.${pinnedT ? ` · 📌 ${esc(pinnedT.name)}` : ""}</p>
-    ${pinnedT ? `<button class="add-btn" id="cp-unpin">Αφαίρεση σταθερού καθηγητή</button>` : ""}
+    <div class="pin-controls">
+      ${pinnedT
+        ? `<button class="add-btn" id="cp-unpin-teacher">📌 Αφαίρεση σταθερού καθηγητή</button>` : ""}
+      ${timePinned
+        ? `<button class="add-btn" id="cp-unpin-time">📌 Ξεκαρφίτσωμα ώρας (${
+            (cls.pinned_slots || []).map((s) => `${GDAYS[s.day]} ${tickLabel(s.start)}`).join(", ")})</button>`
+        : (nowSlots.length
+            ? `<button class="add-btn" id="cp-pin-time">📌 Καρφίτσωμα στην τρέχουσα ώρα (${
+                nowSlots.map((s) => s.label).join(", ")})</button>` : "")}
+    </div>
     <h4>Μαθητές (${students.length})</h4>
     <div class="chip-list">${students.map((s) =>
       `<span class="drag-chip student-chip" draggable="true"
@@ -788,9 +802,18 @@ function openClassPanel(classId) {
   panel.classList.remove("hidden");
 
   $("#cp-close").addEventListener("click", closeClassPanel);
-  const unpin = $("#cp-unpin");
-  if (unpin) unpin.addEventListener("click", () =>
+  const unpinT = $("#cp-unpin-teacher");
+  if (unpinT) unpinT.addEventListener("click", () =>
     applyOps([{ op: "update_class", class: cls.id, pinned_teacher: null }]));
+  const unpinTime = $("#cp-unpin-time");
+  if (unpinTime) unpinTime.addEventListener("click", () =>
+    applyOps([{ op: "update_class", class: cls.id, clear_pinned_slots: true }]));
+  const pinTime = $("#cp-pin-time");
+  if (pinTime) pinTime.addEventListener("click", () =>
+    applyOps(nowSlots.map((s) => ({
+      op: "update_class", class: cls.id,
+      pin_slot: { day: s.day, start: tickLabel(s.start) },
+    }))));
   $("#cp-add-student").addEventListener("click", async () => {
     const vals = await miniForm(`Νέος μαθητής στο ${cls.name}`, [
       { key: "name", label: "Όνομα", type: "text" },

@@ -300,6 +300,8 @@ table.editor input.narrow { width: 64px; }
   float: right; border: none; background: none; cursor: pointer;
   font-size: 15px; color: var(--muted);
 }
+.pin-controls { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.pin-controls .add-btn { margin: 0; text-align: left; }
 
 #mini-form {
   position: fixed; top: 90px; left: 50%; transform: translateX(-50%);
