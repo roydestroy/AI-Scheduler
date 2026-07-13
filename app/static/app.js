@@ -273,7 +273,47 @@ function renderData() {
   renderRooms();
   renderClasses();
   renderStudents();
+  updateDataCounts();
+  reapplyFilters();
 }
+
+function updateDataCounts() {
+  const set = (id, n) => { const el = $(id); if (el) el.textContent = n; };
+  set("#cnt-students", school.students.length);
+  set("#cnt-classes", school.classes.length);
+  set("#cnt-teachers", school.teachers.length);
+  set("#cnt-rooms", school.rooms.length);
+}
+
+/* ── data sub-tabs ─────────────────────────────────────────────── */
+document.querySelectorAll(".subtab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".subtab-btn").forEach((b) =>
+      b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".sub-panel").forEach((p) =>
+      p.classList.toggle("active", p.dataset.panel === btn.dataset.sub));
+  });
+});
+
+/* ── live row filters (students / classes / teachers) ──────────── */
+const _filters = {};
+document.querySelectorAll(".list-filter").forEach((inp) => {
+  inp.addEventListener("input", () => {
+    _filters[inp.dataset.filter] = inp.value.trim().toLowerCase();
+    applyFilter(inp.dataset.filter);
+  });
+});
+function applyFilter(which) {
+  const term = _filters[which] || "";
+  const host = $(`#${which}-editor`);
+  if (!host) return;
+  host.querySelectorAll("tbody tr, table.editor tr").forEach((tr) => {
+    if (tr.querySelector("th")) return;            // header row
+    const txt = tr.textContent.toLowerCase();
+    tr.classList.toggle("filter-hidden", term && !txt.includes(term));
+  });
+}
+function reapplyFilters() { Object.keys(_filters).forEach(applyFilter); }
 
 function locOptions(selected, allowEmpty) {
   let html = allowEmpty ? `<option value="" ${!selected ? "selected" : ""}>—</option>` : "";
@@ -969,7 +1009,7 @@ async function renderErpSources() {
   try {
     const body = await api("/api/erp/sources");
     if (!body.sources.length) return;           // not configured → keep hidden
-    $("#erp-section").classList.remove("hidden");
+    $("#erp-subtab-btn").classList.remove("hidden");
     const host = $("#erp-sources");
     host.innerHTML = "";
     for (const s of body.sources) {

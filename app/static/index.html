@@ -67,47 +67,53 @@
     </div>
     <div id="data-errors" class="error-box hidden"></div>
 
-    <details id="erp-section" class="hidden" open>
-      <summary>Εισαγωγή από ERP</summary>
+    <nav class="subtabs" id="data-subtabs">
+      <button class="subtab-btn active" data-sub="students">Μαθητές <span class="count" id="cnt-students"></span></button>
+      <button class="subtab-btn" data-sub="classes">Τμήματα <span class="count" id="cnt-classes"></span></button>
+      <button class="subtab-btn" data-sub="teachers">Καθηγητές <span class="count" id="cnt-teachers"></span></button>
+      <button class="subtab-btn" data-sub="rooms">Αίθουσες <span class="count" id="cnt-rooms"></span></button>
+      <button class="subtab-btn" data-sub="hours">Ωράρια</button>
+      <button class="subtab-btn hidden" data-sub="erp" id="erp-subtab-btn">Εισαγωγή ERP</button>
+    </nav>
+
+    <div class="sub-panel active" data-panel="students">
+      <input type="search" class="list-filter" data-filter="students" placeholder="🔎 Αναζήτηση μαθητή…">
+      <div id="students-editor"></div>
+      <button class="add-btn" data-add="student">＋ Προσθήκη μαθητή</button>
+      <p class="hint">Μαθητές στην ίδια ομάδα αδελφών έχουν τουλάχιστον μία κοινή ημέρα την εβδομάδα.</p>
+    </div>
+
+    <div class="sub-panel" data-panel="classes">
+      <input type="search" class="list-filter" data-filter="classes" placeholder="🔎 Αναζήτηση τμήματος…">
+      <div id="classes-editor"></div>
+      <button class="add-btn" data-add="class">＋ Προσθήκη τμήματος</button>
+    </div>
+
+    <div class="sub-panel" data-panel="teachers">
+      <input type="search" class="list-filter" data-filter="teachers" placeholder="🔎 Αναζήτηση καθηγητή…">
+      <div id="teachers-editor"></div>
+      <button class="add-btn" data-add="teacher">＋ Προσθήκη καθηγητή</button>
+      <p class="hint">Επίπεδα: χωρισμένα με κόμμα. Μη διαθέσιμος/η: π.χ. <code>Δευ 16:00-18:00; Τετ 17:00-19:00</code>.</p>
+    </div>
+
+    <div class="sub-panel" data-panel="rooms">
+      <div id="rooms-editor"></div>
+      <button class="add-btn" data-add="room">＋ Προσθήκη αίθουσας</button>
+    </div>
+
+    <div class="sub-panel" data-panel="hours">
+      <div id="hours-editor"></div>
+      <p class="hint">Μορφή: <code>15:30-21:00</code> — αφήστε κενό για κλειστά.</p>
+    </div>
+
+    <div class="sub-panel" data-panel="erp">
       <div id="erp-sources" class="erp-sources"></div>
       <div id="erp-preview"></div>
       <p class="hint">Διαβάζει τις ενεργές εγγραφές της επιλεγμένης σχολικής περιόδου από τη βάση ERP κάθε
         κτηρίου. Ενημερώνονται/αφαιρούνται μόνο εγγραφές που προήλθαν από το ERP — οι χειροκίνητες
         καταχωρήσεις δεν πειράζονται ποτέ.
         Ρύθμιση συνδέσεων στο <code>data/erp_sources.json</code> (βλ. <code>erp_sources.example.json</code>).</p>
-    </details>
-
-    <details open>
-      <summary>Ωράρια λειτουργίας</summary>
-      <div id="hours-editor"></div>
-      <p class="hint">Μορφή: <code>15:30-21:00</code> — αφήστε κενό για κλειστά.</p>
-    </details>
-
-    <details open>
-      <summary>Καθηγητές</summary>
-      <div id="teachers-editor"></div>
-      <button class="add-btn" data-add="teacher">＋ Προσθήκη καθηγητή</button>
-      <p class="hint">Επίπεδα: χωρισμένα με κόμμα. Μη διαθέσιμος/η: π.χ. <code>Δευ 16:00-18:00; Τετ 17:00-19:00</code>.</p>
-    </details>
-
-    <details open>
-      <summary>Αίθουσες</summary>
-      <div id="rooms-editor"></div>
-      <button class="add-btn" data-add="room">＋ Προσθήκη αίθουσας</button>
-    </details>
-
-    <details open>
-      <summary>Τμήματα</summary>
-      <div id="classes-editor"></div>
-      <button class="add-btn" data-add="class">＋ Προσθήκη τμήματος</button>
-    </details>
-
-    <details open>
-      <summary>Μαθητές</summary>
-      <div id="students-editor"></div>
-      <button class="add-btn" data-add="student">＋ Προσθήκη μαθητή</button>
-      <p class="hint">Μαθητές στην ίδια ομάδα αδελφών έχουν τουλάχιστον μία κοινή ημέρα την εβδομάδα.</p>
-    </details>
+    </div>
   </section>
 
   <!-- ── Assistant tab ────────────────────────────────────────────── -->

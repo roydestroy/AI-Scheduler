@@ -147,6 +147,31 @@ li.chg-added   { color: var(--ok); }
 .session .cls { font-weight: 600; }
 .session .meta { color: #374151; font-size: 11.5px; }
 
+/* ── data sub-tabs ──────────────────────────────────────────────── */
+.subtabs {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.subtab-btn {
+  border: none; background: none; padding: 9px 16px; cursor: pointer;
+  font-size: 15px; color: var(--muted); border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.subtab-btn:hover { color: var(--ink); }
+.subtab-btn.active { color: var(--accent); font-weight: 600; border-bottom-color: var(--accent); }
+.subtab-btn .count {
+  font-size: 11.5px; background: var(--line); color: var(--muted);
+  padding: 1px 7px; border-radius: 999px; margin-left: 4px;
+}
+.subtab-btn.active .count { background: #eef2ff; color: var(--accent); }
+.sub-panel { display: none; }
+.sub-panel.active { display: block; }
+.list-filter {
+  width: 100%; max-width: 360px; padding: 8px 14px; margin-bottom: 12px;
+  border: 1px solid var(--line); border-radius: 999px; font-size: 14px;
+}
+tr.filter-hidden { display: none; }
+
 /* ── data editors ───────────────────────────────────────────────── */
 .data-toolbar {
   display: flex; gap: 12px; align-items: center; justify-content: flex-end;
