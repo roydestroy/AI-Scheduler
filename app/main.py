@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from scheduler.diagnose import diagnose
-from scheduler.solver import solve
+from scheduler.solver import preference_report, solve
 from . import assistant, backup, diff, erp, export, operations, slots, store
 
 app = FastAPI(title="Language School Scheduler", version="0.4")
@@ -222,6 +222,9 @@ def _solve_and_store(school: dict, time_limit_seconds: int) -> dict:
         result["warnings"].extend(diagnose(school, time_limit_per_probe=10))
     # what changed vs the previous solve, so the user never loses track
     result["changes"] = diff.compute_changes(previous, result)
+    # which soft preferences ended up unmet (drives the readable penalty view)
+    if result["schedule"]:
+        result["preferences"] = preference_report(school, result["schedule"])
     store.save_last_schedule(result)
     return result
 
@@ -385,6 +388,8 @@ def api_whatif(req: ApplyRequest):
         store.attach_baseline(trial, previous, field="sticky_slots")
     result = solve(trial, time_limit_seconds=req.time_limit_seconds)
     result["changes"] = diff.compute_changes(previous, result)
+    if result["schedule"]:
+        result["preferences"] = preference_report(new_school, result["schedule"])
     return {"preview": preview, "result": result}
 
 

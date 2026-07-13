@@ -109,6 +109,40 @@ def _day_patterns(school: dict, cls: dict) -> list[tuple]:
 RELAXABLE = ("patterns", "young_cutoff", "travel", "student_blocks", "siblings")
 
 
+def preference_report(school: dict, schedule: list) -> dict:
+    """Explain the soft-preference penalty of a solved schedule: which
+    classes are not at their preferred location, on Friday, or (for
+    Saturday-preferring classes) not on Saturday. Deterministic — computed
+    from the final schedule, so it always matches what the user sees.
+    Load-balancing (S7) is a tie-breaker, not a 'preference', so it is
+    excluded here; that keeps 'total 0 = all preferences met' true."""
+    class_map = {c["id"]: c for c in school["classes"]}
+    room_map = {r["id"]: r for r in school["rooms"]}
+    items = []
+    for e in schedule:
+        cls = class_map.get(e["class_id"], {})
+        loc = e["location"]
+        pref = cls.get("preferred_location")
+        slot = f"{DAYS[e['day_idx']]} {e['start_label']}"
+        if pref and loc != pref:
+            items.append({"type": "location", "penalty": 3,
+                          "text": f"{e['class_name']}: στο κτήριο {loc} αντί {pref} "
+                                  f"(προτίμηση) — {slot}"})
+        if e["day_idx"] == 4:
+            items.append({"type": "friday", "penalty": 2,
+                          "text": f"{e['class_name']}: μάθημα Παρασκευή {e['start_label']}"})
+        if cls.get("saturday_preferred") and e["day_idx"] != 5:
+            items.append({"type": "saturday", "penalty": 5,
+                          "text": f"{e['class_name']} (προτίμηση Σαββάτου): {slot} αντί Σάββατο"})
+    order = {"saturday": 0, "location": 1, "friday": 2}
+    items.sort(key=lambda i: (order[i["type"]], i["text"]))
+    total = sum(i["penalty"] for i in items)
+    summary = {}
+    for i in items:
+        summary[i["type"]] = summary.get(i["type"], 0) + 1
+    return {"total": total, "items": items, "summary": summary}
+
+
 def solve(school: dict, time_limit_seconds: int = 120,
           relax: frozenset[str] | set[str] = frozenset()) -> dict:
     """Build and solve the timetable. `relax` names constraint groups

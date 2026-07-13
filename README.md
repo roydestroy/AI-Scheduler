@@ -230,8 +230,13 @@ Additional hard constraints you can set from the schedule: **pinned teacher**
 classes** (H10, automatic). All appear in the **🔒 Περιορισμοί** panel and are
 removable with one click.
 
-The solver minimises total penalty. A score of **0** means every preference
-was satisfied as well as every hard rule.
+The solver minimises total penalty. After each solve the status bar shows
+which preferences ended up **unmet** — an expandable list naming each class
+that landed at the wrong location, on a Friday, or (for Saturday-preferring
+classes) off Saturday, with the cost of each. "✓ όλες οι προτιμήσεις
+ικανοποιούνται" means a perfect score. (Load-balancing is a silent
+tie-breaker and is deliberately excluded from this figure, so 0 really does
+mean every stated preference was met.)
 
 ### When no schedule exists
 

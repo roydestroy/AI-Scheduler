@@ -95,8 +95,24 @@ function renderStatus(result) {
   const bar = $("#solve-status");
   bar.classList.remove("hidden");
   bar.className = `status-bar status-${result.status || "UNKNOWN"}`;
-  const pen = result.objective !== null && result.objective !== undefined
-    ? `<span>Ποινή: <b>${result.objective}</b> (0 = όλες οι προτιμήσεις ικανοποιούνται)</span>` : "";
+  // readable "unmet preferences" view (replaces the raw penalty number)
+  let prefHtml = "";
+  const pr = result.preferences;
+  if (pr) {
+    if (!pr.items.length) {
+      prefHtml = `<span class="chg-chip chg-none">✓ όλες οι προτιμήσεις ικανοποιούνται</span>`;
+    } else {
+      const PL = { saturday: "εκτός Σαββάτου", location: "λάθος κτήριο", friday: "Παρασκευή" };
+      const chips = Object.entries(pr.summary)
+        .map(([t, n]) => `<span class="chg-chip">${n} ${PL[t] || t}</span>`).join(" ");
+      prefHtml = `<details class="changes-panel" open>
+        <summary>Ανεκπλήρωτες προτιμήσεις (ποινή ${pr.total}) · ${chips}</summary>
+        <ul>${pr.items.map((i) => `<li>− ${esc(i.text)} (−${i.penalty})</li>`).join("")}</ul>
+      </details>`;
+    }
+  } else if (result.objective !== null && result.objective !== undefined) {
+    prefHtml = `<span>Ποινή: <b>${result.objective}</b></span>`;
+  }
   const warns = (result.warnings || []).map((w) => `<div class="warn-line">⚠ ${esc(w)}</div>`).join("");
   const exports = (result.schedule || []).length
     ? `<span class="export-links"><a href="/api/export/pdf">⬇ PDF</a>
@@ -121,7 +137,7 @@ function renderStatus(result) {
   }
 
   bar.innerHTML = `<span class="big">${esc(STATUS_GR[result.status] || result.status || "—")}</span>
-    <span>${(result.schedule || []).length} μαθήματα</span> ${pen} ${exports} ${changesHtml} ${warns}`;
+    <span>${(result.schedule || []).length} μαθήματα</span> ${prefHtml} ${exports} ${changesHtml} ${warns}`;
 }
 
 function changedKeyMap(result) {
