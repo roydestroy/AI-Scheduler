@@ -36,10 +36,21 @@
       <button class="add-btn" id="qadd-class">＋ Τμήμα</button>
       <button class="add-btn" id="qadd-teacher">＋ Καθηγητής</button>
       <button class="add-btn" id="show-constraints">🔒 Περιορισμοί</button>
+      <button class="add-btn" id="find-slots">🔍 Ελεύθερες ώρες</button>
+      <input type="search" id="lens-search" placeholder="🔎 Εστίαση σε καθηγητή/μαθητή…" autocomplete="off">
       <label class="hint" style="cursor:pointer"><input type="checkbox" id="show-students">
         Μαθητές στο πλέγμα</label>
-      <span class="hint">Κλικ σε τμήμα για τους μαθητές του · σύρετε μαθητή ή καθηγητή
-        πάνω σε άλλο τμήμα ίδιου επιπέδου</span>
+      <label class="hint" style="cursor:pointer" title="Προεπισκόπηση κάθε αλλαγής πριν εφαρμοστεί">
+        <input type="checkbox" id="preview-mode"> Προεπισκόπηση</label>
+      <span class="menu-wrap">
+        <button class="add-btn" id="more-menu-btn">⋯ Περισσότερα</button>
+        <div id="more-menu" class="hidden">
+          <a href="/api/export/slips?by=class">🖨 Ενημερωτικά ανά τμήμα</a>
+          <a href="/api/export/slips?by=student">🖨 Ενημερωτικά ανά μαθητή</a>
+          <a href="/api/backup">💾 Λήψη αντιγράφου ασφαλείας</a>
+        </div>
+      </span>
+      <span class="hint">Σύρετε τμήμα σε άλλη ώρα για καρφίτσωμα · μαθητή/καθηγητή σε τμήμα ίδιου επιπέδου</span>
     </div>
     <div id="solve-status" class="status-bar hidden"></div>
     <div id="schedule-grids">

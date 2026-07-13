@@ -171,8 +171,11 @@ function renderSchedule(result) {
     card.innerHTML = `<h2>${GDAYS_FULL[day]}</h2>`;
     const grid = document.createElement("div");
     grid.className = "day-grid";
+    grid.dataset.day = day;
+    grid.dataset.open = open;
     grid.style.gridTemplateColumns = `56px repeat(${rooms.length}, minmax(110px, 1fr))`;
     grid.style.gridTemplateRows = `26px repeat(${nticks}, ${tickPx}px)`;
+    wireGridTimePin(grid, tickPx);
 
     // header row (explicit columns — auto-placement would misalign them)
     grid.insertAdjacentHTML("beforeend", `<div class="grid-head" style="grid-row:1;grid-column:1"></div>`);
@@ -205,14 +208,19 @@ function renderSchedule(result) {
       const pinned = cls && cls.pinned_teacher;
 
       const div = document.createElement("div");
-      div.className = `session ${locCls}${chgText ? " changed" : ""}`;
+      const timePinned = cls && (cls.pinned_slots || []).some(
+        (s) => s.day === e.day_idx && s.start === e.start_tick);
+      div.className = `session ${locCls}${chgText ? " changed" : ""}${timePinned ? " time-pinned" : ""}`;
       div.style.gridColumn = col;
       div.style.gridRow = `${e.start_tick - open + 2} / ${e.end_tick - open + 2}`;
       div.dataset.classId = e.class_id;
       div.dataset.level = cls ? cls.level : "";
+      div.dataset.teacherId = e.teacher_id;
+      div.setAttribute("draggable", "true");   // drag the block to pin its time
       div.title = `${e.class_name} — ${e.teacher}, ${e.start_label}–${e.end_label}`
         + (chgText ? `\n★ ${chgText}` : "");
       div.innerHTML = (chgText ? `<span class="chg-dot" title="${esc(chgText)}">★</span>` : "")
+        + (timePinned ? `<span class="pin-dot" title="Καρφιτσωμένη ώρα">📌</span>` : "")
         + `<div class="cls">${esc(e.class_name)}</div>
         <div class="meta">${e.start_label}–${e.end_label} ·
           <span class="drag-chip teacher-chip" draggable="true"
@@ -316,7 +324,7 @@ function dayChecks(days, idx, kind) {
 
 function renderTeachers() {
   let html = `<table class="editor"><tr>
-    <th>Id</th><th>Όνομα</th><th>Έδρα</th><th>Επίπεδα</th><th>Ημέρες</th><th>Μη διαθέσιμος/η</th><th></th></tr>`;
+    <th>Id</th><th>Όνομα</th><th>Έδρα</th><th>Επίπεδα</th><th>Ημέρες</th><th>Μη διαθέσιμος/η</th><th title="Μέγιστες περίοδοι διδασκαλίας/εβδομάδα — κενό = χωρίς όριο">Μέγ. ώρες</th><th></th></tr>`;
   school.teachers.forEach((t, i) => {
     html += `<tr>
       <td>${esc(t.id)}</td>
@@ -325,6 +333,7 @@ function renderTeachers() {
       <td><input type="text" data-f="levels" data-i="${i}" value="${esc(t.qualified_levels.join(", "))}"></td>
       <td>${dayChecks(t.available_days, i, "teacher")}</td>
       <td><input type="text" data-f="blocked" data-i="${i}" value="${esc(windowsToText(t.blocked_windows))}" placeholder="Δευ 16:00-18:00"></td>
+      <td><input type="number" min="1" class="narrow" data-f="max_hours" data-i="${i}" value="${t.max_hours || ""}" placeholder="—"></td>
       <td><button class="row-del" data-i="${i}" title="Αφαίρεση">✕</button></td></tr>`;
   });
   html += `</table>`;
@@ -341,6 +350,10 @@ function renderTeachers() {
       const ws = parseWindowsText(el.value);
       if (ws === null) { alert("Μη έγκυρη μορφή. Γράψτε: Δευ 16:00-18:00; Τετ 17:00-19:00"); renderTeachers(); return; }
       t.blocked_windows = ws;
+    }
+    else if (f === "max_hours") {
+      const n = parseInt(el.value, 10);
+      if (n >= 1) t.max_hours = n; else delete t.max_hours;
     }
     setDirty(true);
   }));
@@ -542,8 +555,26 @@ function toast(msg, ms = 6000, bad = false) {
 }
 
 /* apply operations through the standard pipeline: validated, previewed
-   server-side, recorded in history (undo!), then auto re-solve */
+   server-side, recorded in history (undo!), then auto re-solve.
+   In preview mode, dry-run via /whatif and confirm before committing. */
 async function applyOps(operations) {
+  if ($("#preview-mode").checked) {
+    toast("⏳ Προεπισκόπηση…", 0);
+    try {
+      const wf = await api("/api/whatif", {
+        method: "POST", body: JSON.stringify({ operations }),
+      });
+      const ch = wf.result.changes;
+      const summary = ch ? `${ch.summary.unchanged || 0} αμετάβλητα, ${
+        (ch.items || []).length} αλλαγές` : wf.result.status;
+      $("#toast").classList.add("hidden");
+      if (!confirm(`Προεπισκόπηση:\n${wf.preview.join("\n")}\n\nΑποτέλεσμα επίλυσης: ${
+        STATUS_GR[wf.result.status] || wf.result.status} (${summary}).\n\nΝα εφαρμοστεί;`)) {
+        toast("Ακυρώθηκε.");
+        return;
+      }
+    } catch (e) { toast(`⚠ ${e.message}`, 9000, true); return; }
+  }
   toast("⏳ Εφαρμογή & επίλυση…", 0);
   try {
     const body = await api("/api/assistant/apply", {
@@ -567,15 +598,40 @@ async function applyOps(operations) {
 /* drag sources are wired via delegation; payload describes what moves */
 document.addEventListener("dragstart", (ev) => {
   const chip = ev.target.closest ? ev.target.closest(".drag-chip") : null;
-  if (!chip) return;
   let payload = null;
-  if (chip.dataset.teacher) payload = { type: "teacher", id: chip.dataset.teacher };
-  if (chip.dataset.student) {
-    payload = { type: "student", id: chip.dataset.student,
-                level: chip.dataset.level, from: chip.dataset.from };
+  if (chip) {
+    if (chip.dataset.teacher) payload = { type: "teacher", id: chip.dataset.teacher };
+    if (chip.dataset.student) {
+      payload = { type: "student", id: chip.dataset.student,
+                  level: chip.dataset.level, from: chip.dataset.from };
+    }
+  } else {
+    const block = ev.target.closest ? ev.target.closest(".session") : null;
+    if (block) payload = { type: "class", id: block.dataset.classId };
   }
   if (payload) ev.dataTransfer.setData("text/plain", JSON.stringify(payload));
 });
+
+/* drop a class block onto a grid → pin that class's session to that day+time */
+function wireGridTimePin(grid, tickPx) {
+  grid.addEventListener("dragover", (ev) => ev.preventDefault());
+  grid.addEventListener("drop", (ev) => {
+    let payload = null;
+    try { payload = JSON.parse(ev.dataTransfer.getData("text/plain")); } catch {}
+    if (!payload || payload.type !== "class") return;   // student/teacher handled by block
+    ev.preventDefault();
+    const box = grid.getBoundingClientRect();
+    const y = ev.clientY - box.top - 26;                // minus header row
+    if (y < 0) return;
+    const day = +grid.dataset.day;
+    const start = +grid.dataset.open + Math.round(y / tickPx);
+    const startTick = Math.max(0, Math.round(start));
+    const hh = String(Math.floor(startTick / 4)).padStart(2, "0");
+    const mm = String((startTick % 4) * 15).padStart(2, "0");
+    applyOps([{ op: "update_class", class: payload.id,
+                pin_slot: { day, start: `${hh}:${mm}` } }]);
+  });
+}
 
 function dropCheck(block, payload) {
   const target = school.classes.find((c) => c.id === block.dataset.classId);
@@ -734,6 +790,15 @@ function renderConstraints() {
       row(`📌 ${c.name}: σταθερός καθηγητής ${t ? t.name : c.pinned_teacher}`,
           [{ op: "update_class", class: c.id, pinned_teacher: null }]);
     }
+    for (const sl of c.pinned_slots || []) {
+      row(`📌 ${c.name}: σταθερή ώρα ${GDAYS[sl.day]} ${tickLabel(sl.start)}`,
+          [{ op: "update_class", class: c.id, clear_pinned_slots: true }]);
+    }
+  }
+  for (const t of school.teachers) {
+    if (t.max_hours)
+      row(`⏱ ${t.name}: μέγιστες ${t.max_hours} περίοδοι/εβδομάδα`,
+          [{ op: "update_teacher", teacher: t.id, max_hours: null }]);
   }
   for (const t of school.teachers) {
     for (let d = 0; d < 6; d++) {
@@ -771,6 +836,64 @@ function renderConstraints() {
     applyOps(rows[+b.dataset.ci].ops)));
 }
 $("#show-constraints").addEventListener("click", renderConstraints);
+
+/* ── focus lens: dim everything except sessions matching the search ─── */
+function applyLens(term) {
+  term = (term || "").trim().toLowerCase();
+  const blocks = document.querySelectorAll(".session");
+  if (!term) { blocks.forEach((b) => b.classList.remove("lens-dim", "lens-hit")); return; }
+  const matchIds = new Set();
+  for (const t of school.teachers)
+    if (t.name.toLowerCase().includes(term)) matchIds.add("T:" + t.id);
+  const stuClasses = new Set();
+  for (const s of school.students)
+    if (s.name.toLowerCase().includes(term)) stuClasses.add(s.class_id);
+  blocks.forEach((b) => {
+    const hit = matchIds.has("T:" + b.dataset.teacherId) || stuClasses.has(b.dataset.classId)
+      || (b.querySelector(".cls") || {}).textContent?.toLowerCase().includes(term);
+    b.classList.toggle("lens-hit", !!hit);
+    b.classList.toggle("lens-dim", !hit);
+  });
+}
+let lensTimer = null;
+$("#lens-search").addEventListener("input", (e) => {
+  clearTimeout(lensTimer);
+  lensTimer = setTimeout(() => applyLens(e.target.value), 150);
+});
+
+/* ── free-slot finder ──────────────────────────────────────────────── */
+$("#find-slots").addEventListener("click", async () => {
+  const teachers = school.teachers.map((t) => `Καθηγητής: ${t.name}`);
+  const rooms = school.rooms.map((r) => `Αίθουσα: ${r.name}`);
+  const vals = await miniForm("Εύρεση ελεύθερων ωρών", [
+    { key: "who", label: "Ποιος/ποια", type: "select", options: [...teachers, ...rooms] },
+    { key: "periods", label: "Διάρκεια (περίοδοι)", type: "select", options: [1, 2, 3] },
+  ]);
+  if (!vals) return;
+  const isTeacher = vals.who.startsWith("Καθηγητής: ");
+  const name = vals.who.replace(/^(Καθηγητής|Αίθουσα): /, "");
+  const ent = isTeacher ? school.teachers.find((t) => t.name === name)
+                        : school.rooms.find((r) => r.name === name);
+  if (!ent) return;
+  const data = await api(`/api/slots?kind=${isTeacher ? "teacher" : "room"}&id=${ent.id}&periods=${vals.periods}`);
+  const panel = $("#class-panel");
+  panel.innerHTML = `<button class="panel-close" id="cp-close">✕</button>
+    <h3>🔍 Ελεύθερες ώρες</h3>
+    <p class="hint">${esc(data.label)} · διάρκεια ${vals.periods} περίοδοι</p>
+    ${(data.days || []).length ? data.days.map((d) => `
+      <div class="slot-day"><b>${GDAYS_FULL[d.day_idx]}</b>
+        ${d.windows.map((w) => `<span class="slot-chip">${esc(w.label)}</span>`).join(" ")}</div>`).join("")
+      : '<p class="hint">Καμία ελεύθερη ώρα βρέθηκε.</p>'}`;
+  panel.classList.remove("hidden");
+  $("#cp-close").addEventListener("click", closeClassPanel);
+});
+
+/* ── "more" menu (exports / backup) ─────────────────────────────────── */
+$("#more-menu-btn").addEventListener("click", () =>
+  $("#more-menu").classList.toggle("hidden"));
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".menu-wrap")) $("#more-menu").classList.add("hidden");
+});
 
 /* ── workspaces & undo ─────────────────────────────────────────── */
 

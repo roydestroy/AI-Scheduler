@@ -47,13 +47,14 @@ add_teacher     {"op":"add_teacher","name":str,"home":location,"qualified_levels
 update_teacher  {"op":"update_teacher","teacher":id_or_name, then any of:
                  "available_days":[day,...], "add_available_days":[day,...], "remove_available_days":[day,...],
                  "qualified_levels":[level,...], "home":location, "name":str,
-                 "blocked_windows":[window,...], "add_blocked_windows":[window,...]}
+                 "blocked_windows":[window,...], "add_blocked_windows":[window,...],
+                 "max_hours":int (max teaching periods/week; null removes the cap)}
 remove_teacher  {"op":"remove_teacher","teacher":id_or_name}
 add_room        {"op":"add_room","name":str,"location":location,"capacity":int}
 update_room     {"op":"update_room","room":id_or_name, then any of: "name","location","capacity" (capacity=null → unlimited)}
 remove_room     {"op":"remove_room","room":id_or_name}
 add_class       {"op":"add_class","name":str,"level":level,"periods_per_session":int,"sessions_per_week":int,"preferred_location":location,"saturday_preferred":bool}
-update_class    {"op":"update_class","class":id_or_name, then any of: "level","periods_per_session","sessions_per_week","preferred_location","name","saturday_preferred","pinned_teacher" (fix one teacher to the class; null unpins)}
+update_class    {"op":"update_class","class":id_or_name, then any of: "level","periods_per_session","sessions_per_week","preferred_location","name","saturday_preferred","pinned_teacher" (fix one teacher; null unpins),"pin_slot":{"day":day,"start":"HH:MM"} (force a session at that time),"clear_pinned_slots":true}
 remove_class    {"op":"remove_class","class":id_or_name}
 add_student     {"op":"add_student","name":str,"class":id_or_name,"sibling_group":str_or_null,"blocked_windows":[window,...],"note":str}
 update_student  {"op":"update_student","student":id_or_name, then any of: "class","sibling_group","blocked_windows","add_blocked_windows","note","name"}

@@ -364,8 +364,71 @@ def solve(school: dict, time_limit_seconds: int = 120,
         if day_overlap_bools:
             model.add_bool_or(day_overlap_bools)
 
+    # ── H10: a student in several classes must not have overlapping sessions ──
+    # (e.g. an English class + a study-lab group). Only students enrolled in
+    # 2+ schedulable classes matter.
+    stud_classes: dict[str, set] = defaultdict(set)
+    for s in school["students"]:
+        if s["class_id"] not in excluded:
+            stud_classes[s["id"]].add(s["class_id"])
+    for sid, cids in stud_classes.items():
+        if len(cids) < 2:
+            continue
+        by_day_s: dict[int, list] = defaultdict(list)
+        for k, v in candidates.items():
+            if k[0] in cids:
+                by_day_s[v["day"]].append(v["interval"])
+        for intervals in by_day_s.values():
+            if len(intervals) > 1:
+                model.add_no_overlap(intervals)
+
+    # ── Time pins: force a session of the class at exactly (day, start) ───────
+    # Set by dragging a class block onto a slot in the schedule UI.
+    for cls in school["classes"]:
+        c = cls["id"]
+        if c in excluded:
+            continue
+        for pin in cls.get("pinned_slots", []):
+            pd, ps = pin.get("day"), pin.get("start")
+            eqs = []
+            for k, v in candidates.items():
+                if k[0] == c and v["day"] == pd:
+                    eq = model.new_bool_var(f"tpin_{c}_{pd}_{ps}_{id(v)}")
+                    model.add(v["start"] == ps).only_enforce_if(eq)
+                    model.add_implication(eq, v["active"])
+                    eqs.append(eq)
+            if eqs:
+                model.add_bool_or(eqs)
+            else:
+                from .data import tick_label as _tl
+                warnings.append(f"Το {cls['name']}: το καρφιτσωμένο σημείο "
+                                f"{DAYS[pd]} {_tl(ps)} δεν είναι εφικτό — η καρφίτσα αγνοείται.")
+
+    # ── H11: teacher weekly workload cap (max_hours = max periods/week) ───────
+    teacher_load = {}          # t_id → LinearExpr (periods taught)
+    for t in school["teachers"]:
+        terms = []
+        for k, v in candidates.items():
+            if v["teacher"] == t["id"]:
+                terms.append(class_map[k[0]]["periods_per_session"] * v["active"])
+        load = sum(terms) if terms else 0
+        teacher_load[t["id"]] = load
+        cap = t.get("max_hours")
+        if cap and terms:
+            model.add(load <= int(cap))
+
     # ── Objective ─────────────────────────────────────────────────────────────
     penalties = []
+
+    # S6 — balance teacher load: softly pull down the busiest teacher
+    # (minimise the peak weekly load). Small weight so it only breaks ties.
+    if settings.get("balance_teacher_load", True):
+        loads = [ld for ld in teacher_load.values() if not isinstance(ld, int)]
+        if loads:
+            peak = model.new_int_var(0, 96, "peak_load")
+            for ld in loads:
+                model.add(peak >= ld)
+            penalties.append(peak)   # weight 1
     for k, v in candidates.items():
         cls = class_map[k[0]]
         loc = room_map[v["room"]]["location"]

@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from scheduler.diagnose import diagnose
 from scheduler.solver import solve
-from . import assistant, diff, erp, export, operations, store
+from . import assistant, backup, diff, erp, export, operations, slots, store
 
 app = FastAPI(title="Language School Scheduler", version="0.4")
 
@@ -192,6 +192,10 @@ def put_school(req: SchoolUpdate):
     errors = store.validate_school(req.school)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
+    try:
+        backup.make_backup("save")
+    except OSError:
+        pass                     # backups are best-effort, never block a save
     store.push_history("Manual edit of school data")
     store.save_school(req.school)
     return {"ok": True, "school": req.school, "rev": store.school_rev()}
@@ -330,6 +334,58 @@ def export_pdf():
         media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="school-timetable.pdf"'},
     )
+
+
+@app.get("/api/export/slips")
+def export_slips(by: str = "class"):
+    """Parent notice slips (Greek PDF): one per class (by=class) or per
+    student (by=student)."""
+    result = _last_schedule_or_404()
+    pdf = export.build_slips(result, store.load_school(), by=by)
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="school-slips-{by}.pdf"'},
+    )
+
+
+# ── free-slot finder ──────────────────────────────────────────────────────────
+
+@app.get("/api/slots")
+def api_slots(kind: str, id: str, periods: int = 2):
+    result = store.load_last_schedule() or {"schedule": []}
+    return slots.find_slots(store.load_school(), result.get("schedule", []),
+                            kind, id, periods=periods)
+
+
+# ── backups ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/backup")
+def api_backup_download():
+    name, data = backup.download_bytes()
+    return Response(content=data, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.get("/api/backups")
+def api_backups_list():
+    return {"backups": backup.list_backups()}
+
+
+# ── what-if preview (dry-run re-solve, nothing saved) ─────────────────────────
+
+@app.post("/api/whatif")
+def api_whatif(req: ApplyRequest):
+    school = store.load_school()
+    new_school, preview, errors = operations.apply_operations(school, req.operations)
+    if errors:
+        raise HTTPException(status_code=422, detail={"errors": errors})
+    previous = store.load_last_schedule()
+    trial = copy.deepcopy(new_school)
+    if previous and previous.get("schedule"):
+        store.attach_baseline(trial, previous, field="sticky_slots")
+    result = solve(trial, time_limit_seconds=req.time_limit_seconds)
+    result["changes"] = diff.compute_changes(previous, result)
+    return {"preview": preview, "result": result}
 
 
 # ── AI assistant ──────────────────────────────────────────────────────────────

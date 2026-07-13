@@ -209,6 +209,13 @@ def _op_update_teacher(school, op):
     if "add_blocked_windows" in op:
         t["blocked_windows"] = t.get("blocked_windows", []) + norm_windows(op["add_blocked_windows"])
         changes.append("μη διαθέσιμος/η: " + ", ".join(window_label(w) for w in t["blocked_windows"]))
+    if "max_hours" in op:
+        if op["max_hours"]:
+            t["max_hours"] = int(op["max_hours"])
+            changes.append(f"μέγιστες ώρες/εβδ. → {t['max_hours']}")
+        else:
+            t.pop("max_hours", None)
+            changes.append("μέγιστες ώρες → χωρίς όριο")
     if not changes:
         raise OpError(f"update_teacher για {t['name']}: δεν δόθηκαν αναγνωρίσιμα πεδία.")
     return f"Ενημέρωση καθηγητή/τριας {t['name']} ({t['id']}): " + "· ".join(changes)
@@ -314,6 +321,15 @@ def _op_update_class(school, op):
         else:
             c.pop("pinned_teacher", None)
             changes.append("αφαίρεση σταθερού καθηγητή")
+    if "pin_slot" in op:
+        d, ps = norm_day(op["pin_slot"]["day"]), norm_time(op["pin_slot"].get("start"))
+        slots = [s for s in c.get("pinned_slots", []) if s["day"] != d]
+        slots.append({"day": d, "start": ps})
+        c["pinned_slots"] = slots
+        changes.append(f"σταθερή ώρα → {GREEK_DAYS[d]} {tick_label(ps)} 📌")
+    if "clear_pinned_slots" in op:
+        c.pop("pinned_slots", None)
+        changes.append("αφαίρεση σταθερών ωρών")
     if not changes:
         raise OpError(f"update_class για {c['name']}: δεν δόθηκαν αναγνωρίσιμα πεδία.")
     return f"Ενημέρωση τμήματος {c['name']} ({c['id']}): " + "· ".join(changes)

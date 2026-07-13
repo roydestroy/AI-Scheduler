@@ -170,3 +170,75 @@ def build_pdf(result: dict, school: dict) -> bytes:
             pdf.ln(2)
 
     return bytes(pdf.output())
+
+
+# ── parent notice slips ───────────────────────────────────────────────────────
+
+def build_slips(result: dict, school: dict, by: str = "class") -> bytes:
+    """Printable notices for parents: the weekly sessions of each class
+    (by='class') or a personal slip per student (by='student')."""
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    family, unicode_ok = _setup_font(pdf)
+
+    def _txt(s):
+        return str(s) if unicode_ok else str(s).encode("latin-1", "replace").decode("latin-1")
+
+    sched = result.get("schedule", [])
+    by_class = defaultdict(list)
+    for e in sched:
+        by_class[e["class_id"]].append(e)
+    for cid in by_class:
+        by_class[cid].sort(key=lambda x: (x["day_idx"], x["start_tick"]))
+
+    def class_lines(cid):
+        lines = []
+        for e in by_class.get(cid, []):
+            loc = school["locations"].get(e["location"], e["location"])
+            lines.append(f"{GREEK_DAYS_FULL.get(e['day'], e['day'])}  "
+                         f"{e['start_label']}-{e['end_label']}  ·  {loc}, "
+                         f"{e['room_name']}  ·  {e['teacher']}")
+        return lines
+
+    def slip(title, subtitle, lines):
+        pdf.add_page()
+        pdf.set_font(family, "B", 18)
+        pdf.cell(0, 12, _txt("Ωρολόγιο Πρόγραμμα"), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font(family, "B", 14)
+        pdf.cell(0, 9, _txt(title), new_x="LMARGIN", new_y="NEXT")
+        if subtitle:
+            pdf.set_font(family, "", 11); pdf.set_text_color(110)
+            pdf.cell(0, 7, _txt(subtitle), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(0)
+        pdf.ln(3)
+        pdf.set_font(family, "", 12)
+        if lines:
+            for ln in lines:
+                pdf.cell(6, 8, _txt("•"))
+                pdf.cell(0, 8, _txt(ln), new_x="LMARGIN", new_y="NEXT")
+        else:
+            pdf.cell(0, 8, _txt("(δεν έχει προγραμματιστεί μάθημα)"), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(6)
+        pdf.set_font(family, "", 9); pdf.set_text_color(130)
+        pdf.cell(0, 6, _txt("Οι ώρες μπορεί να αλλάξουν — παρακαλούμε επιβεβαιώστε με τη γραμματεία."),
+                 new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(0)
+
+    class_map = {c["id"]: c for c in school["classes"]}
+    if by == "student":
+        for s in sorted(school["students"], key=lambda x: x.get("name", "")):
+            cls = class_map.get(s["class_id"])
+            if not cls:
+                continue
+            slip(s["name"], f"Τμήμα {cls['name']} — επίπεδο {cls['level']}",
+                 class_lines(s["class_id"]))
+    else:
+        for c in school["classes"]:
+            if c["id"] in by_class:
+                slip(c["name"], f"Επίπεδο {c['level']}", class_lines(c["id"]))
+
+    if pdf.page_no() == 0:
+        pdf.add_page()
+        pdf.set_font(family, "", 12)
+        pdf.cell(0, 10, _txt("Δεν υπάρχει πρόγραμμα για εκτύπωση."))
+    return bytes(pdf.output())

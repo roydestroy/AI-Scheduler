@@ -353,6 +353,9 @@ def validate_school(school: dict) -> list[str]:
             if not isinstance(d, int) or not (0 <= d < len(DAYS)):
                 err(f"Teacher {tid}: invalid available day {d!r}.")
         check_windows(f"Teacher {tid}", t.get("blocked_windows", []))
+        mh = t.get("max_hours")
+        if mh is not None and (not isinstance(mh, int) or mh < 1):
+            err(f"Καθηγητής {tid}: οι μέγιστες ώρες πρέπει να είναι θετικός ακέραιος ή κενό.")
 
     # classes
     check_unique_ids("class", school["classes"])
@@ -373,6 +376,11 @@ def validate_school(school: dict) -> list[str]:
         pin = c.get("pinned_teacher")
         if pin and pin not in {t.get("id") for t in school["teachers"]}:
             err(f"Τμήμα {cid}: ο σταθερός καθηγητής '{pin}' δεν υπάρχει.")
+        for sl in c.get("pinned_slots", []):
+            if (not isinstance(sl, dict) or not isinstance(sl.get("day"), int)
+                    or not isinstance(sl.get("start"), int)
+                    or not (0 <= sl["day"] < len(DAYS)) or not (0 <= sl["start"] <= MAX_TICK)):
+                err(f"Τμήμα {cid}: μη έγκυρη σταθερή ώρα {sl!r}.")
 
     # students
     check_unique_ids("student", school["students"])

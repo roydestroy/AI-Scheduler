@@ -139,6 +139,14 @@ Tuesday 17:30 when it becomes next year's EJ3.
 change, an ERP import, or a re-solve. The last 30 states are kept per
 workspace.
 
+**Schedule tools** (toolbar): 🔍 **free-slot finder** (when is a teacher or
+room free this week?), a **focus lens** search box (dims everything except a
+teacher's or student's sessions), a **Προεπισκόπηση** toggle (dry-run any
+change and confirm before it commits), and a **⋯ Περισσότερα** menu with
+**parent notice slips** (per class or per student, Greek PDF) and **backup
+download**. Backups are also taken automatically before every save
+(`data/backups/`, last 20 kept).
+
 **Change tracking**: every solve is compared to the previous one. The
 status bar shows a summary ("35 unchanged · 2 teacher changes"), an
 expandable list spells out each difference ("B2 Gr.1: teacher Petros →
@@ -214,6 +222,13 @@ teacher** simultaneously, optimising the whole week at once.
 | S4 | Schedule stability: keep each class at last year's day + time | 4 / session |
 | S5 | Schedule stability: keep the same teacher at that same slot | 2 / session |
 | S6 | Sticky re-solve: tie-break towards the previous solve (time/teacher/room) | 1 / session |
+| S7 | Balance teacher load: minimise the busiest teacher's weekly hours | 1 / peak period |
+
+Additional hard constraints you can set from the schedule: **pinned teacher**
+(drag a teacher onto a class), **pinned time** (drag a class block to a slot),
+**teacher max hours/week**, and **no time-overlap for a student enrolled in two
+classes** (H10, automatic). All appear in the **🔒 Περιορισμοί** panel and are
+removable with one click.
 
 The solver minimises total penalty. A score of **0** means every preference
 was satisfied as well as every hard rule.
